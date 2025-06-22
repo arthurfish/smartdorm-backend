@@ -96,13 +96,14 @@ public class SecondFullSystemFlowIntegrationTest {
         // Clean slate
         resultRepository.deleteAllInBatch();
         responseRepository.deleteAllInBatch();
+        notificationRepository.deleteAllInBatch();
+        swapRequestRepository.deleteAllInBatch();
+        feedbackRepository.deleteAllInBatch();
+        articleRepository.deleteAllInBatch();
         bedRepository.deleteAllInBatch();
         roomRepository.deleteAllInBatch();
         buildingRepository.deleteAllInBatch();
         dimensionRepository.deleteAllInBatch();
-        swapRequestRepository.deleteAllInBatch();
-        feedbackRepository.deleteAllInBatch();
-        articleRepository.deleteAllInBatch();
         cycleRepository.deleteAllInBatch();
         userRepository.deleteAllInBatch();
 
@@ -207,19 +208,28 @@ public class SecondFullSystemFlowIntegrationTest {
 
     @Test
     @Order(4)
-    @DisplayName("步骤4 [ADM-03, ADM-08]: 管理员触发分配并检验结果质量")
+    @DisplayName("步骤4 [ADM-03, ADM-08]: 管理员触发分配并检验结果质量 (增强测试)")
     void step4_AdminTriggersAndValidatesAssignment() throws Exception {
-        mockMvc.perform(post("/admin/cycles/" + this.cycleId + "/trigger-assignment").header("Authorization", adminToken)).andExpect(status().isAccepted());
+        // 1. Admin triggers assignment
+        mockMvc.perform(post("/admin/cycles/" + this.cycleId + "/trigger-assignment")
+                        .header("Authorization", adminToken))
+                .andExpect(status().isAccepted());
 
+        // *** MOCKING THE ALGORITHM'S RESULT ***
         createMatchingResult(cycleId, studentUser.getId(), bed1Id, roomId);
         createMatchingResult(cycleId, roommateUser.getId(), bed2Id, roomId);
 
+        // 2. Admin validates the results and we assert the full response structure
         mockMvc.perform(get("/admin/cycles/" + this.cycleId + "/validate-results")
                         .header("Authorization", adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isValid", is(true)))
-                .andExpect(jsonPath("$.message", containsString("符合所有检验标准")))
-                .andExpect(jsonPath("$.details", hasSize(1)));
+                .andExpect(jsonPath("$.message", is("Results meet all validation criteria.")))
+                .andExpect(jsonPath("$.details", hasSize(1)))
+                .andExpect(jsonPath("$.details[0].dorm", is("Zijing Building 1-301")))
+                .andExpect(jsonPath("$.details[0].metric", is("Neuroticism Mean")))
+                .andExpect(jsonPath("$.details[0].value", is(0.55)))
+                .andExpect(jsonPath("$.details[0].isCompliant", is(true)));
     }
 
     @Test
@@ -230,7 +240,7 @@ public class SecondFullSystemFlowIntegrationTest {
                         .header("Authorization", adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(2)))
-                .andExpect(jsonPath("$[0].user.name", anyOf(is("张三"), is("李四"))))
+                .andExpect(jsonPath("$[*].user.name", containsInAnyOrder("张三", "李四")))
                 .andExpect(jsonPath("$[0].building", is("紫荆公寓")))
                 .andExpect(jsonPath("$[0].room", is("401")));
     }

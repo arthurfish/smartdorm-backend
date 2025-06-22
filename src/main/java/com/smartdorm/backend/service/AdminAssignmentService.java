@@ -85,14 +85,19 @@ public class AdminAssignmentService {
         }
 
         // TODO: Implement real validation logic.
-        // For now, we return a mock successful validation report.
-        List<ValidationDetailDto> mockDetails = Collections.singletonList(
-                new ValidationDetailDto("紫荆1号楼-301", "神经质均值", 0.55, true)
+        // For now, return a mock successful validation report that matches the DTO structure.
+        List<ValidationDetailDto> mockDetails = List.of(
+                new ValidationDetailDto(
+                        "Zijing Building 1-301", // Dorm name
+                        "Neuroticism Mean",       // Metric name
+                        0.55,                     // Metric value
+                        true                      // Is compliant
+                )
         );
 
         return new AdminAssignmentValidationDto(
                 true,
-                "结果符合所有检验标准。",
+                "Results meet all validation criteria.",
                 mockDetails
         );
     }
