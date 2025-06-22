@@ -13,4 +13,7 @@ public interface MatchingResultRepository extends JpaRepository<MatchingResult, 
     Optional<MatchingResult> findByUserId(UUID userId);
 
     List<MatchingResult> findByBed_Room_Id(UUID roomId);
+    List<MatchingResult> findByCycleId(UUID cycleId);
+
+    boolean existsByCycleId(UUID cycleId);
 }

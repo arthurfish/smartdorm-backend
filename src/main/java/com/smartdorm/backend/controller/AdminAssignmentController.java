@@ -1,10 +1,13 @@
 package com.smartdorm.backend.controller;
 
+import com.smartdorm.backend.dto.AdminDtos.AdminAssignmentValidationDto;
+import com.smartdorm.backend.dto.AdminDtos.AssignmentResultAdminDto;
 import com.smartdorm.backend.service.AdminAssignmentService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -25,17 +28,23 @@ public class AdminAssignmentController {
         return ResponseEntity.accepted().body(Map.of("message", "Assignment process started."));
     }
 
-    @GetMapping("/validate-results")
-    public ResponseEntity<Map<String, Object>> validateResults(@PathVariable UUID cycleId) {
-        // 在实际业务中，这里会调用 Service 层进行复杂的验证。
-        // 目前我们只实现一个占位符，以满足测试通过。
-        // 你可以稍后在 AdminAssignmentService 中实现真正的验证逻辑。
-        boolean isValid = adminAssignmentService.validateResults(cycleId);
-        return ResponseEntity.ok(Map.of(
-                "cycleId", cycleId,
-                "isValid", isValid,
-                "message", "Validation check completed."
-        ));
+    /**
+     * [NEW] Endpoint to get the full list of assignment results for a cycle.
+     * Corresponds to use case ADM-04.
+     */
+    @GetMapping("/results")
+    public ResponseEntity<List<AssignmentResultAdminDto>> getAssignmentResults(@PathVariable UUID cycleId) {
+        List<AssignmentResultAdminDto> results = adminAssignmentService.getAssignmentResults(cycleId);
+        return ResponseEntity.ok(results);
     }
-    // The /results and /validate-results endpoints can be added here later.
+
+    /**
+     * [ENHANCED] Endpoint to validate the quality of assignment results.
+     * Corresponds to use case ADM-08.
+     */
+    @GetMapping("/validate-results")
+    public ResponseEntity<AdminAssignmentValidationDto> validateResults(@PathVariable UUID cycleId) {
+        AdminAssignmentValidationDto report = adminAssignmentService.validateResults(cycleId);
+        return ResponseEntity.ok(report);
+    }
 }
