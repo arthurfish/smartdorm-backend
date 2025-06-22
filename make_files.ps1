@@ -1,15 +1,24 @@
-# Define the list of files to create (relative to project root)
+<#
+.SYNOPSIS
+Creates blank files for the P5 support features in the project root directory.
+Does not overwrite existing files.
+#>
+
+# List of all files to create (relative to project root)
 $files = @(
-    "src/main/java/com/smartdorm/backend/entity/UserResponse.java",
-    "src/main/java/com/smartdorm/backend/entity/MatchingResult.java",
-    "src/main/java/com/smartdorm/backend/repository/UserResponseRepository.java",
-    "src/main/java/com/smartdorm/backend/repository/MatchingResultRepository.java",
-    "src/main/java/com/smartdorm/backend/dto/StudentDtos.java",
-    "src/main/java/com/smartdorm/backend/service/StudentService.java",
-    "src/main/java/com/smartdorm/backend/service/AdminAssignmentService.java",
-    "src/main/java/com/smartdorm/backend/controller/StudentController.java",
-    "src/main/java/com/smartdorm/backend/controller/AdminAssignmentController.java",
-    "src/test/java/com/smartdorm/backend/controller/StudentFlowIntegrationTest.java"
+    "src/main/java/com/smartdorm/backend/entity/Feedback.java",
+    "src/main/java/com/smartdorm/backend/entity/SwapRequest.java",
+    "src/main/java/com/smartdorm/backend/entity/ContentArticle.java",
+    "src/main/java/com/smartdorm/backend/entity/Notification.java",
+    "src/main/java/com/smartdorm/backend/repository/FeedbackRepository.java",
+    "src/main/java/com/smartdorm/backend/repository/SwapRequestRepository.java",
+    "src/main/java/com/smartdorm/backend/repository/ContentArticleRepository.java",
+    "src/main/java/com/smartdorm/backend/repository/NotificationRepository.java",
+    "src/main/java/com/smartdorm/backend/dto/SupportDtos.java",
+    "src/main/java/com/smartdorm/backend/service/SupportService.java",
+    "src/main/java/com/smartdorm/backend/controller/StudentSupportController.java",
+    "src/main/java/com/smartdorm/backend/controller/AdminSupportController.java",
+    "src/test/java/com/smartdorm/backend/controller/SupportFeaturesIntegrationTest.java"
 )
 
 # Process each file
@@ -25,11 +34,11 @@ foreach ($file in $files) {
 
     # Create file if it doesn't exist
     if (-not (Test-Path -Path $file -PathType Leaf)) {
-        New-Item -Path $file -ItemType File -Force | Out-Null
+        New-Item -Path $file -ItemType File | Out-Null
         Write-Host "Created file: $file"
     } else {
-        Write-Host "Skipped (already exists): $file"
+        Write-Host "Skipped existing file: $file"
     }
 }
 
-Write-Host "`nFile creation process completed."
+Write-Host "`nFile creation completed. Check the output for details."

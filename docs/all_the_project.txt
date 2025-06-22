@@ -1,6 +1,6 @@
 ﻿.gitignore:
 target
-
+.idea
 ----------
 .\all_to_one.ps1:
 # 1. 閰嶇疆椤圭洰璺緞鍜岃緭鍑烘枃浠讹紙鏍规嵁瀹為檯鎯呭喌淇敼锛?
@@ -193,48 +193,41 @@ CREATE TABLE content_articles (
 
 ----------
 .\make_files.ps1:
-<#
-.SYNOPSIS
-鍒涘缓鍖归厤鍛ㄦ湡涓庨棶鍗风鐞嗗姛鑳芥墍闇€鐨勭┖鐧絁ava鏂囦欢锛堜粎褰撴枃浠朵笉瀛樺湪鏃讹級銆?
-
-.DESCRIPTION
-璇ヨ剼鏈細鍦ㄩ」鐩牴鐩綍涓嬪垱寤烘寚瀹氱殑Java鏂囦欢鍙婂叾鐖剁洰褰曠粨鏋勶紝涓嶄細瑕嗙洊宸插瓨鍦ㄧ殑鏂囦欢銆?
-#>
-
-# 瀹氫箟闇€瑕佸垱寤虹殑鏂囦欢璺緞鍒楄〃锛堢浉瀵逛簬椤圭洰鏍圭洰褰曪級
-$targetFiles = @(
-    "src/main/java/com/smartdorm/backend/entity/MatchingCycle.java",
-    "src/main/java/com/smartdorm/backend/entity/SurveyDimension.java",
-    "src/main/java/com/smartdorm/backend/entity/DimensionOption.java",
-    "src/main/java/com/smartdorm/backend/repository/MatchingCycleRepository.java",
-    "src/main/java/com/smartdorm/backend/repository/SurveyDimensionRepository.java",
-    "src/main/java/com/smartdorm/backend/dto/CycleDtos.java",
-    "src/main/java/com/smartdorm/backend/mapper/CycleMapper.java",
-    "src/main/java/com/smartdorm/backend/service/CycleManagementService.java",
-    "src/main/java/com/smartdorm/backend/controller/CycleController.java",
-    "src/test/java/com/smartdorm/backend/controller/CycleControllerIntegrationTest.java"
+# Define the list of files to create (relative to project root)
+$files = @(
+    "src/main/java/com/smartdorm/backend/entity/UserResponse.java",
+    "src/main/java/com/smartdorm/backend/entity/MatchingResult.java",
+    "src/main/java/com/smartdorm/backend/repository/UserResponseRepository.java",
+    "src/main/java/com/smartdorm/backend/repository/MatchingResultRepository.java",
+    "src/main/java/com/smartdorm/backend/dto/StudentDtos.java",
+    "src/main/java/com/smartdorm/backend/service/StudentService.java",
+    "src/main/java/com/smartdorm/backend/service/AdminAssignmentService.java",
+    "src/main/java/com/smartdorm/backend/controller/StudentController.java",
+    "src/main/java/com/smartdorm/backend/controller/AdminAssignmentController.java",
+    "src/test/java/com/smartdorm/backend/controller/StudentFlowIntegrationTest.java"
 )
 
-# 寰幆澶勭悊姣忎釜鐩爣鏂囦欢
-foreach ($filePath in $targetFiles) {
-    # 妫€鏌ユ枃浠舵槸鍚﹀凡瀛樺湪
-    if (-not (Test-Path -Path $filePath -PathType Leaf)) {
-        # 鍒涘缓鐖剁洰褰曪紙濡傛灉涓嶅瓨鍦級
-        $parentDir = Split-Path -Path $filePath -Parent
-        if (-not (Test-Path -Path $parentDir -PathType Container)) {
-            New-Item -Path $parentDir -ItemType Directory -Force | Out-Null
-            Write-Host "鍒涘缓鐩綍: $parentDir"
-        }
+# Process each file
+foreach ($file in $files) {
+    # Get parent directory path
+    $directory = Split-Path -Path $file -Parent
 
-        # 鍒涘缓绌虹櫧鏂囦欢
-        New-Item -Path $filePath -ItemType File | Out-Null
-        Write-Host "鍒涘缓鏂囦欢: $filePath"
+    # Create directory if it doesn't exist
+    if (-not (Test-Path -Path $directory -PathType Container)) {
+        New-Item -Path $directory -ItemType Directory -Force | Out-Null
+        Write-Host "Created directory: $directory"
+    }
+
+    # Create file if it doesn't exist
+    if (-not (Test-Path -Path $file -PathType Leaf)) {
+        New-Item -Path $file -ItemType File -Force | Out-Null
+        Write-Host "Created file: $file"
     } else {
-        Write-Host "璺宠繃宸插瓨鍦ㄧ殑鏂囦欢: $filePath"
+        Write-Host "Skipped (already exists): $file"
     }
 }
 
-Write-Host "done"
+Write-Host "`nFile creation process completed."
 
 ----------
 .\pom.xml:
@@ -469,6 +462,40 @@ public class SecurityConfig {
     }
 }
 ----------
+.\src\main\java\com\smartdorm\backend\controller\AdminAssignmentController.java:
+package com.smartdorm.backend.controller;
+
+import com.smartdorm.backend.service.AdminAssignmentService;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Map;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/admin/cycles/{cycleId}")
+@PreAuthorize("hasRole('ADMIN')")
+public class AdminAssignmentController {
+
+    private final AdminAssignmentService adminAssignmentService;
+
+    public AdminAssignmentController(AdminAssignmentService adminAssignmentService) {
+        this.adminAssignmentService = adminAssignmentService;
+    }
+
+    @PostMapping("/trigger-assignment")
+    public ResponseEntity<Map<String, String>> triggerAssignment(@PathVariable UUID cycleId) {
+        adminAssignmentService.triggerAssignment(cycleId);
+        return ResponseEntity.accepted().body(Map.of("message", "Assignment process started."));
+    }
+
+    // The /results and /validate-results endpoints can be added here later.
+}
+----------
 .\src\main\java\com\smartdorm\backend\controller\AuthController.java:
 package com.smartdorm.backend.controller;
 
@@ -668,6 +695,58 @@ public class HealthCheckController {
     }
 }
 ----------
+.\src\main\java\com\smartdorm\backend\controller\StudentController.java:
+package com.smartdorm.backend.controller;
+
+import com.smartdorm.backend.dto.StudentDtos.*;
+import com.smartdorm.backend.entity.User;
+import com.smartdorm.backend.exception.ResourceNotFoundException;
+import com.smartdorm.backend.repository.UserRepository;
+import com.smartdorm.backend.service.StudentService;
+import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/student")
+@PreAuthorize("hasRole('STUDENT')")
+public class StudentController {
+
+    private final StudentService studentService;
+    private final UserRepository userRepository;
+
+    public StudentController(StudentService studentService, UserRepository userRepository) {
+        this.studentService = studentService;
+        this.userRepository = userRepository;
+    }
+
+    @GetMapping("/survey")
+    public ResponseEntity<SurveyForStudentDto> getSurvey() {
+        return ResponseEntity.ok(studentService.getSurveyForStudent());
+    }
+
+    @PostMapping("/responses")
+    public ResponseEntity<Void> submitResponses(@Valid @RequestBody UserResponseSubmitDto dto, @AuthenticationPrincipal UserDetails userDetails) {
+        User currentUser = getCurrentUser(userDetails);
+        studentService.submitResponses(dto, currentUser);
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/result")
+    public ResponseEntity<AssignmentResultStudentDto> getResult(@AuthenticationPrincipal UserDetails userDetails) {
+        User currentUser = getCurrentUser(userDetails);
+        return ResponseEntity.ok(studentService.getStudentResult(currentUser));
+    }
+
+    private User getCurrentUser(UserDetails userDetails) {
+        return userRepository.findByStudentId(userDetails.getUsername())
+                .orElseThrow(() -> new ResourceNotFoundException("Authenticated user not found in database."));
+    }
+}
+----------
 .\src\main\java\com\smartdorm\backend\controller\UserController.java:
 // src/main/java/com/smartdorm/backend/controller/UserController.java
 package com.smartdorm.backend.controller;
@@ -843,6 +922,38 @@ public record LoginResponse(
         UserDto user
 ) {}
 ----------
+.\src\main\java\com\smartdorm\backend\dto\StudentDtos.java:
+package com.smartdorm.backend.dto;
+
+import com.smartdorm.backend.dto.CycleDtos.SurveyDimensionDto;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import java.util.List;
+import java.util.UUID;
+
+public class StudentDtos {
+
+    // --- Response DTOs ---
+
+    public record SurveyForStudentDto(UUID cycleId, List<SurveyDimensionDto> dimensions) {}
+
+    public record AssignmentDetails(String building, String room, int bed) {}
+    public record RoommateDto(String name, String studentId) {}
+    public record AssignmentResultStudentDto(AssignmentDetails assignment, List<RoommateDto> roommates) {}
+
+
+    // --- Request DTOs ---
+
+    public record ResponseItem(
+            @NotNull UUID dimensionId,
+            @NotNull Double rawValue
+    ) {}
+
+    public record UserResponseSubmitDto(
+            @NotNull @Valid List<ResponseItem> responses
+    ) {}
+}
+----------
 .\src\main\java\com\smartdorm\backend\dto\UserDto.java:
 package com.smartdorm.backend.dto;
 
@@ -1014,6 +1125,38 @@ public class MatchingCycle {
     private List<SurveyDimension> dimensions = new ArrayList<>();
 }
 ----------
+.\src\main\java\com\smartdorm\backend\entity\MatchingResult.java:
+package com.smartdorm.backend.entity;
+
+import jakarta.persistence.*;
+import lombok.Data;
+import java.util.UUID;
+
+@Data
+@Entity
+@Table(name = "matching_results")
+public class MatchingResult {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cycle_id", nullable = false)
+    private MatchingCycle cycle;
+
+    @OneToOne
+    @JoinColumn(name = "user_id", nullable = false, unique = true)
+    private User user;
+
+    @OneToOne
+    @JoinColumn(name = "bed_id", nullable = false, unique = true)
+    private Bed bed;
+
+    @Column(name = "match_group_id", nullable = false)
+    private UUID matchGroupId; // Used to group roommates
+}
+----------
 .\src\main\java\com\smartdorm\backend\entity\SurveyDimension.java:
 package com.smartdorm.backend.entity;
 
@@ -1108,6 +1251,45 @@ public class User {
 
     @Column(nullable = false)
     private boolean isSpecialNeeds = false;
+
+    @CreationTimestamp
+    private Instant createdAt;
+
+    @UpdateTimestamp
+    private Instant updatedAt;
+}
+----------
+.\src\main\java\com\smartdorm\backend\entity\UserResponse.java:
+package com.smartdorm.backend.entity;
+
+import jakarta.persistence.*;
+import lombok.Data;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+import java.time.Instant;
+import java.util.UUID;
+
+@Data
+@Entity
+@Table(name = "user_responses", uniqueConstraints = {
+        @UniqueConstraint(columnNames = {"user_id", "dimension_id"})
+})
+public class UserResponse {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "dimension_id", nullable = false)
+    private SurveyDimension dimension;
+
+    @Column(name = "raw_value", nullable = false)
+    private double rawValue;
 
     @CreationTimestamp
     private Instant createdAt;
@@ -1317,6 +1499,24 @@ import java.util.UUID;
 public interface MatchingCycleRepository extends JpaRepository<MatchingCycle, UUID> {
 }
 ----------
+.\src\main\java\com\smartdorm\backend\repository\MatchingResultRepository.java:
+package com.smartdorm.backend.repository;
+
+import com.smartdorm.backend.entity.MatchingResult;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+@Repository
+public interface MatchingResultRepository extends JpaRepository<MatchingResult, UUID> {
+    Optional<MatchingResult> findByUserId(UUID userId);
+
+    List<MatchingResult> findByBed_Room_Id(UUID roomId);
+}
+----------
 .\src\main\java\com\smartdorm\backend\repository\SurveyDimensionRepository.java:
 package com.smartdorm.backend.repository;
 
@@ -1345,6 +1545,24 @@ import java.util.UUID;
 @Repository
 public interface UserRepository extends JpaRepository<User, UUID> {
     Optional<User> findByStudentId(String studentId);
+}
+----------
+.\src\main\java\com\smartdorm\backend\repository\UserResponseRepository.java:
+package com.smartdorm.backend.repository;
+
+import com.smartdorm.backend.entity.UserResponse;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+@Repository
+public interface UserResponseRepository extends JpaRepository<UserResponse, UUID> {
+    Optional<UserResponse> findByUserIdAndDimensionId(UUID userId, UUID dimensionId);
+
+    List<UserResponse> findByUserId(UUID userId);
 }
 ----------
 .\src\main\java\com\smartdorm\backend\security\JwtAccessDeniedHandler.java:
@@ -1535,6 +1753,48 @@ public class UserDetailsServiceImpl implements UserDetailsService {
                 user.getPassword(),
                 Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + user.getRole()))
         );
+    }
+}
+----------
+.\src\main\java\com\smartdorm\backend\service\AdminAssignmentService.java:
+package com.smartdorm.backend.service;
+
+import com.smartdorm.backend.entity.MatchingCycle;
+import com.smartdorm.backend.exception.DataConflictException;
+import com.smartdorm.backend.exception.ResourceNotFoundException;
+import com.smartdorm.backend.repository.MatchingCycleRepository;
+import jakarta.transaction.Transactional;
+import org.springframework.stereotype.Service;
+import java.util.UUID;
+
+@Service
+@Transactional
+public class AdminAssignmentService {
+
+    private final MatchingCycleRepository cycleRepository;
+
+    public AdminAssignmentService(MatchingCycleRepository cycleRepository) {
+        this.cycleRepository = cycleRepository;
+    }
+
+    /**
+     * Placeholder for the real assignment logic.
+     * Currently, it just updates the cycle status.
+     */
+    public void triggerAssignment(UUID cycleId) {
+        MatchingCycle cycle = cycleRepository.findById(cycleId)
+                .orElseThrow(() -> new ResourceNotFoundException("Cycle not found with id: " + cycleId));
+
+        if (!"OPEN".equals(cycle.getStatus())) {
+            throw new DataConflictException("Cannot trigger assignment for a cycle that is not in 'OPEN' status.");
+        }
+
+        // In a real scenario, you'd trigger an async job here.
+        // For now, we simulate the completion of the process.
+        cycle.setStatus("COMPLETED");
+        cycleRepository.save(cycle);
+
+        // Here you would generate notifications, results etc.
     }
 }
 ----------
@@ -1843,6 +2103,92 @@ public class DormResourceService {
             throw new ResourceNotFoundException("Bed not found with id: " + bedId);
         }
         bedRepository.deleteById(bedId);
+    }
+}
+----------
+.\src\main\java\com\smartdorm\backend\service\StudentService.java:
+package com.smartdorm.backend.service;
+
+import com.smartdorm.backend.dto.StudentDtos.*;
+import com.smartdorm.backend.entity.*;
+import com.smartdorm.backend.exception.ResourceNotFoundException;
+import com.smartdorm.backend.mapper.CycleMapper;
+import com.smartdorm.backend.repository.*;
+import jakarta.transaction.Transactional;
+import org.springframework.stereotype.Service;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+@Service
+@Transactional
+public class StudentService {
+
+    private final MatchingCycleRepository cycleRepository;
+    private final SurveyDimensionRepository dimensionRepository;
+    private final UserResponseRepository responseRepository;
+    private final MatchingResultRepository resultRepository;
+    private final CycleMapper cycleMapper;
+
+    public StudentService(MatchingCycleRepository cycleRepository, SurveyDimensionRepository dimensionRepository, UserResponseRepository responseRepository, MatchingResultRepository resultRepository, CycleMapper cycleMapper) {
+        this.cycleRepository = cycleRepository;
+        this.dimensionRepository = dimensionRepository;
+        this.responseRepository = responseRepository;
+        this.resultRepository = resultRepository;
+        this.cycleMapper = cycleMapper;
+    }
+
+    public SurveyForStudentDto getSurveyForStudent() {
+        MatchingCycle openCycle = cycleRepository.findAll().stream()
+                .filter(c -> "OPEN".equals(c.getStatus()))
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException("No open survey is available at the moment."));
+
+        List<SurveyDimension> dimensions = dimensionRepository.findByCycleId(openCycle.getId());
+        return new SurveyForStudentDto(
+                openCycle.getId(),
+                dimensions.stream().map(cycleMapper::toDto).collect(Collectors.toList())
+        );
+    }
+
+    public void submitResponses(UserResponseSubmitDto dto, User currentUser) {
+        List<UserResponse> responsesToSave = new ArrayList<>();
+        for (ResponseItem item : dto.responses()) {
+            UserResponse response = responseRepository.findByUserIdAndDimensionId(currentUser.getId(), item.dimensionId())
+                    .orElse(new UserResponse());
+
+            // Check if dimension exists (optional but good practice)
+            SurveyDimension dimension = dimensionRepository.findById(item.dimensionId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Dimension not found with id: " + item.dimensionId()));
+
+            response.setUser(currentUser);
+            response.setDimension(dimension);
+            response.setRawValue(item.rawValue());
+            responsesToSave.add(response);
+        }
+        responseRepository.saveAll(responsesToSave);
+    }
+
+    public AssignmentResultStudentDto getStudentResult(User currentUser) {
+        MatchingResult result = resultRepository.findByUserId(currentUser.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Your assignment result is not available yet."));
+
+        Bed bed = result.getBed();
+        DormRoom room = bed.getRoom();
+        DormBuilding building = room.getBuilding();
+
+        AssignmentDetails assignmentDetails = new AssignmentDetails(building.getName(), room.getRoomNumber(), bed.getBedNumber());
+
+        // Find roommates in the same room, excluding the current user
+        List<RoommateDto> roommates = resultRepository.findByBed_Room_Id(room.getId()).stream()
+                .map(MatchingResult::getUser)
+                .filter(user -> !user.getId().equals(currentUser.getId()))
+                .map(user -> new RoommateDto(user.getName(), user.getStudentId()))
+                .collect(Collectors.toList());
+
+        return new AssignmentResultStudentDto(assignmentDetails, roommates);
     }
 }
 ----------
@@ -2400,6 +2746,212 @@ class DormResourceControllerIntegrationTest {
 
         mockMvc.perform(get("/admin/dorm-buildings").header("Authorization", studentToken))
                 .andExpect(status().isForbidden());
+    }
+}
+----------
+.\src\test\java\com\smartdorm\backend\controller\StudentFlowIntegrationTest.java:
+package com.smartdorm.backend.controller;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.smartdorm.backend.dto.CycleDtos;
+import com.smartdorm.backend.dto.LoginRequest;
+import com.smartdorm.backend.dto.LoginResponse;
+import com.smartdorm.backend.dto.StudentDtos;
+import com.smartdorm.backend.entity.*;
+import com.smartdorm.backend.repository.*;
+import jakarta.transaction.Transactional;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+import java.util.List;
+import java.util.UUID;
+
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.is;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@SpringBootTest
+@Testcontainers
+@AutoConfigureMockMvc
+@DisplayName("闆嗘垚娴嬭瘯: 瀛︾敓鏍稿績娴佺▼")
+@Transactional
+public class StudentFlowIntegrationTest {
+
+    @Container
+    private static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-alpine");
+
+    @Autowired private MockMvc mockMvc;
+    @Autowired private ObjectMapper objectMapper;
+    @Autowired private PasswordEncoder passwordEncoder;
+    @Autowired private UserRepository userRepository;
+    @Autowired private MatchingCycleRepository cycleRepository;
+    @Autowired private SurveyDimensionRepository dimensionRepository;
+    @Autowired private DormBuildingRepository buildingRepository;
+    @Autowired private DormRoomRepository roomRepository;
+    @Autowired private BedRepository bedRepository;
+    @Autowired private MatchingResultRepository resultRepository;
+
+    private String adminToken;
+    private String studentToken;
+    private User studentUser;
+    private User roommateUser;
+    private SurveyDimension surveyDimension;
+    private MatchingCycle openCycle;
+
+    @DynamicPropertySource
+    static void configureProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", postgres::getJdbcUrl);
+        registry.add("spring.datasource.username", postgres::getUsername);
+        registry.add("spring.datasource.password", postgres::getPassword);
+        registry.add("spring.jpa.hibernate.ddl-auto", () -> "create");
+    }
+
+    @BeforeEach
+    void setUp() throws Exception {
+        resultRepository.deleteAll();
+        bedRepository.deleteAll();
+        roomRepository.deleteAll();
+        buildingRepository.deleteAll();
+        dimensionRepository.deleteAll();
+        cycleRepository.deleteAll();
+        userRepository.deleteAll();
+
+        // Create users
+        User admin = createUser("admin-p4", "pass", "ADMIN", "Admin P4");
+        studentUser = createUser("student-p4", "pass", "STUDENT", "Student P4");
+        roommateUser = createUser("roommate-p4", "pass", "STUDENT", "Roommate P4");
+
+        // Get tokens
+        adminToken = getToken("admin-p4", "pass");
+        studentToken = getToken("student-p4", "pass");
+
+        // Admin creates a cycle and a dimension
+        openCycle = new MatchingCycle();
+        openCycle.setName("Test Cycle");
+        openCycle.setStatus("OPEN");
+        cycleRepository.save(openCycle);
+
+        surveyDimension = new SurveyDimension();
+        surveyDimension.setCycle(openCycle);
+        surveyDimension.setDimensionKey("test_key");
+        surveyDimension.setPrompt("Test Prompt");
+        surveyDimension.setDimensionType("SOFT_FACTOR");
+        surveyDimension.setResponseType("SCALE");
+        dimensionRepository.save(surveyDimension);
+    }
+
+    @Test
+    @DisplayName("瀛︾敓鍙互鑾峰彇闂嵎銆佹彁浜ょ瓟妗堛€佸苟鏌ョ湅妯℃嫙鐨勫垎閰嶇粨鏋?)
+    void studentCanPerformFullSurveyAndResultCheckFlow() throws Exception {
+        // Step 1: Student gets the survey
+        mockMvc.perform(get("/student/survey").header("Authorization", studentToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cycleId", is(openCycle.getId().toString())))
+                .andExpect(jsonPath("$.dimensions", hasSize(1)))
+                .andExpect(jsonPath("$.dimensions[0].prompt", is("Test Prompt")));
+
+        // Step 2: Student submits responses
+        StudentDtos.ResponseItem responseItem = new StudentDtos.ResponseItem(surveyDimension.getId(), 4.0);
+        StudentDtos.UserResponseSubmitDto submitDto = new StudentDtos.UserResponseSubmitDto(List.of(responseItem));
+
+        mockMvc.perform(post("/student/responses")
+                        .header("Authorization", studentToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(submitDto)))
+                .andExpect(status().isOk());
+
+        // Step 3: Admin triggers the assignment (placeholder)
+        mockMvc.perform(post("/admin/cycles/" + openCycle.getId() + "/trigger-assignment")
+                        .header("Authorization", adminToken))
+                .andExpect(status().isAccepted());
+
+        // Step 4: Manually create assignment results for testing the GET /result endpoint
+        createMockResults();
+
+        // Step 5: Student checks their result
+        mockMvc.perform(get("/student/result").header("Authorization", studentToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.assignment.building", is("Test Building")))
+                .andExpect(jsonPath("$.assignment.room", is("101")))
+                .andExpect(jsonPath("$.assignment.bed", is(1)))
+                .andExpect(jsonPath("$.roommates", hasSize(1)))
+                .andExpect(jsonPath("$.roommates[0].name", is("Roommate P4")));
+    }
+
+    private User createUser(String studentId, String password, String role, String name) {
+        User user = new User();
+        user.setStudentId(studentId);
+        user.setName(name);
+        user.setPassword(passwordEncoder.encode(password));
+        user.setRole(role);
+        user.setGender("MALE");
+        user.setCollege("Testing College");
+        return userRepository.save(user);
+    }
+
+    private String getToken(String username, String password) throws Exception {
+        LoginRequest loginRequest = new LoginRequest(username, password);
+        MvcResult result = mockMvc.perform(post("/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(loginRequest)))
+                .andExpect(status().isOk())
+                .andReturn();
+        LoginResponse response = objectMapper.readValue(result.getResponse().getContentAsString(), LoginResponse.class);
+        return "Bearer " + response.token();
+    }
+
+    private void createMockResults() {
+        DormBuilding building = new DormBuilding();
+        building.setName("Test Building");
+        buildingRepository.save(building);
+
+        DormRoom room = new DormRoom();
+        room.setBuilding(building);
+        room.setRoomNumber("101");
+        room.setCapacity(4);
+        room.setGenderType("MALE");
+        roomRepository.save(room);
+
+        Bed bed1 = new Bed();
+        bed1.setRoom(room);
+        bed1.setBedNumber(1);
+        bedRepository.save(bed1);
+
+        Bed bed2 = new Bed();
+        bed2.setRoom(room);
+        bed2.setBedNumber(2);
+        bedRepository.save(bed2);
+
+        UUID groupId = UUID.randomUUID();
+
+        MatchingResult result1 = new MatchingResult();
+        result1.setCycle(openCycle);
+        result1.setUser(studentUser);
+        result1.setBed(bed1);
+        result1.setMatchGroupId(groupId);
+        resultRepository.save(result1);
+
+        MatchingResult result2 = new MatchingResult();
+        result2.setCycle(openCycle);
+        result2.setUser(roommateUser);
+        result2.setBed(bed2);
+        result2.setMatchGroupId(groupId);
+        resultRepository.save(result2);
     }
 }
 ----------
