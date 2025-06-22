@@ -13,4 +13,6 @@ public interface UserResponseRepository extends JpaRepository<UserResponse, UUID
     Optional<UserResponse> findByUserIdAndDimensionId(UUID userId, UUID dimensionId);
 
     List<UserResponse> findByUserId(UUID userId);
+    List<UserResponse> findByDimensionId(UUID userId);
+
 }

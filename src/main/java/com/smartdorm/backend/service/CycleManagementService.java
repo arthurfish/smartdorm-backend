@@ -4,11 +4,13 @@ import com.smartdorm.backend.dto.CycleDtos.*;
 import com.smartdorm.backend.entity.DimensionOption;
 import com.smartdorm.backend.entity.MatchingCycle;
 import com.smartdorm.backend.entity.SurveyDimension;
+import com.smartdorm.backend.entity.UserResponse;
 import com.smartdorm.backend.exception.DataConflictException;
 import com.smartdorm.backend.exception.ResourceNotFoundException;
 import com.smartdorm.backend.mapper.CycleMapper;
 import com.smartdorm.backend.repository.MatchingCycleRepository;
 import com.smartdorm.backend.repository.SurveyDimensionRepository;
+import com.smartdorm.backend.repository.UserResponseRepository;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 
@@ -23,10 +25,15 @@ public class CycleManagementService {
     private final MatchingCycleRepository cycleRepository;
     private final SurveyDimensionRepository dimensionRepository;
     private final CycleMapper cycleMapper;
+    private final UserResponseRepository userResponseRepository;
 
-    public CycleManagementService(MatchingCycleRepository cycleRepository, SurveyDimensionRepository dimensionRepository, CycleMapper cycleMapper) {
+    public CycleManagementService(MatchingCycleRepository cycleRepository,
+                                  SurveyDimensionRepository dimensionRepository,
+                                  UserResponseRepository userResponseRepository,
+                                  CycleMapper cycleMapper) {
         this.cycleRepository = cycleRepository;
         this.dimensionRepository = dimensionRepository;
+        this.userResponseRepository = userResponseRepository;
         this.cycleMapper = cycleMapper;
     }
 
@@ -120,9 +127,21 @@ public class CycleManagementService {
     }
 
     public void deleteDimension(UUID dimensionId) {
+        // 1. 验证维度是否存在，如果不存在，后续操作无意义
         if (!dimensionRepository.existsById(dimensionId)) {
             throw new ResourceNotFoundException("Dimension not found with id: " + dimensionId);
         }
+
+        // 2. 查找并删除所有相关的 UserResponse 记录
+        List<UserResponse> responsesToDelete = userResponseRepository.findByDimensionId(dimensionId);
+        if (!responsesToDelete.isEmpty()) {
+            userResponseRepository.deleteAllInBatch(responsesToDelete);
+        }
+
+        // 3. 现在可以安全地删除 SurveyDimension
+        // SurveyDimension 实体与 DimensionOption 是一对多关系，并且设置了 cascade=ALL, orphanRemoval=true
+        // 这意味着当我们删除 SurveyDimension 时，JPA 会自动删除其关联的所有 DimensionOption。
+        // 所以我们不需要手动删除 options。
         dimensionRepository.deleteById(dimensionId);
     }
 }
