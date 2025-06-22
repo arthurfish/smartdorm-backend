@@ -1,0 +1,31 @@
+server:
+  port: 8080 # 应用监听的端口
+  servlet:
+    context-path: /api # 所有API的根路径
+
+spring:
+  # --- Datasource Configuration ---
+  datasource:
+    url: jdbc:postgresql://localhost:5432/smart_dorm # 连接本地Docker数据库的URL
+    username: user       # 数据库用户名
+    password: password   # 数据库密码
+    driver-class-name: org.postgresql.Driver
+
+  # --- JPA / Hibernate Configuration ---
+  jpa:
+    hibernate:
+      ddl-auto: update # 开发时使用update，应用启动时会自动更新表结构
+    show-sql: true     # 在控制台打印执行的SQL语句，方便调试
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect # 指定PostgreSQL方言
+        format_sql: true # 格式化SQL输出
+
+# --- Custom Application Properties ---
+jwt:
+  secret: "a-very-strong-and-long-secret-key-for-smart-dorm-project-2024" # 用于签发JWT的密钥，生产环境应使用环境变量
+  expiration-ms: 86400000 # Token有效期: 24小时 (24 * 60 * 60 * 1000)
+
+logging:
+  level:
+    org.springframework.security: DEBUG
