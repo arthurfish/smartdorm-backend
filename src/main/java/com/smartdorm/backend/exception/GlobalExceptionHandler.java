@@ -1,4 +1,4 @@
-// Create a new file, e.g., GlobalExceptionHandler.java in a new "exception" package
+// src/main/java/com/smartdorm/backend/exception/GlobalExceptionHandler.java
 package com.smartdorm.backend.exception;
 
 import org.springframework.http.HttpStatus;
@@ -7,19 +7,45 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 
+import java.time.Instant;
 import java.util.Map;
 
 @ControllerAdvice
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(BadCredentialsException.class)
-    public ResponseEntity<Map<String, String>> handleBadCredentialsException(BadCredentialsException ex) {
+    public ResponseEntity<Map<String, Object>> handleBadCredentialsException(BadCredentialsException ex) {
         return ResponseEntity
-                .status(HttpStatus.UNAUTHORIZED) // 返回 401
-                .body(Map.of("error", "Unauthorized", "message", ex.getMessage()));
+                .status(HttpStatus.UNAUTHORIZED)
+                .body(Map.of(
+                        "timestamp", Instant.now(),
+                        "status", HttpStatus.UNAUTHORIZED.value(),
+                        "error", "Unauthorized",
+                        "message", ex.getMessage()
+                ));
     }
 
-    // 你还可以添加其他异常处理器，例如处理 UsernameNotFoundException
-    // @ExceptionHandler(UsernameNotFoundException.class)
-    // public ...
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleResourceNotFoundException(ResourceNotFoundException ex) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(Map.of(
+                        "timestamp", Instant.now(),
+                        "status", HttpStatus.NOT_FOUND.value(),
+                        "error", "Not Found",
+                        "message", ex.getMessage()
+                ));
+    }
+
+    @ExceptionHandler(DataConflictException.class)
+    public ResponseEntity<Map<String, Object>> handleDataConflictException(DataConflictException ex) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(Map.of(
+                        "timestamp", Instant.now(),
+                        "status", HttpStatus.CONFLICT.value(),
+                        "error", "Conflict",
+                        "message", ex.getMessage()
+                ));
+    }
 }

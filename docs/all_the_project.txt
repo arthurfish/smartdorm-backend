@@ -1,0 +1,2405 @@
+﻿.gitignore:
+target
+
+----------
+.\all_to_one.ps1:
+# 1. 閰嶇疆椤圭洰璺緞鍜岃緭鍑烘枃浠讹紙鏍规嵁瀹為檯鎯呭喌淇敼锛?
+$projectRoot = "."  # 椤圭洰鏍圭洰褰曪紙蹇呴』淇敼锛侊級
+$outputFile = ".\docs\all_the_project.txt"  # 杈撳嚭鏂囦欢璺緞
+
+# 2. 閫掑綊鑾峰彇鎵€鏈夋枃浠讹紝鎺掗櫎鎸囧畾鏂囦欢澶?
+Get-ChildItem -Path $projectRoot -Recurse -File |
+Where-Object {
+    # 杩囨护閫昏緫锛氭帓闄よ矾寰勪腑鍖呭惈\target\銆乗.idea\銆乗docs\鐨勬枃浠讹紙浠绘剰灞傜骇閮界敓鏁堬級
+    $_.FullName -notmatch '\\(target|\.idea|docs)\\'
+} |
+# 3. 鐢熸垚鍚堝苟鍐呭锛堢浉瀵硅矾寰?鏂囦欢鍐呭+鍒嗛殧绗︼級
+ForEach-Object {
+    # 鑾峰彇鐩稿浜庨」鐩牴鐩綍鐨勭浉瀵硅矾寰勶紙鏇村噯纭級
+    $relativePath = Resolve-Path -Path $_.FullName -Relative
+    # 鎷兼帴鍐呭锛氱浉瀵硅矾寰?鍐掑彿+鏂囦欢鍐呭+鍒嗛殧绗︼紙淇濈暀鍘熷鎹㈣锛?
+    "${relativePath}:`n$(Get-Content $_.FullName -Raw)`n----------"
+} |
+# 4. 杈撳嚭鍒版枃浠讹紙鎸囧畾UTF-8缂栫爜閬垮厤涔辩爜锛?
+Out-File -FilePath $outputFile -Encoding UTF8
+
+# 鎻愮ず瀹屾垚
+Write-Host "鎵€鏈夋枃浠跺凡鍚堝苟鍒帮細$outputFile" -ForegroundColor Green
+
+----------
+.\docker-compose.yml:
+version: '3.8'
+
+services:
+  # PostgreSQL Database Service
+  postgres:
+    image: postgres:15-alpine # 浣跨敤杞婚噺绾х殑Postgres闀滃儚
+    container_name: smartdorm-db
+    environment:
+      POSTGRES_USER: user        # 涓?application.yml 涓厤缃竴鑷?
+      POSTGRES_PASSWORD: password  # 涓?application.yml 涓厤缃竴鑷?
+      POSTGRES_DB: smart_dorm    # 涓?application.yml 涓厤缃竴鑷?
+    ports:
+      - "5432:5432" # 灏嗗鍣ㄧ殑5432绔彛鏄犲皠鍒颁富鏈虹殑5432绔彛
+    volumes:
+      - pgdata:/var/lib/postgresql/data # 鏁版嵁鎸佷箙鍖栵紝闃叉瀹瑰櫒閲嶅惎鍚庢暟鎹涪澶?
+
+volumes:
+  pgdata: # 瀹氫箟涓€涓暟鎹嵎
+----------
+.\initial_schema.sql:
+-- 鍚敤 pgcrypto 鎵╁睍浠ヤ娇鐢?gen_random_uuid()
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- 1. 鐢ㄦ埛鏍稿績琛?
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    student_id VARCHAR(50) UNIQUE NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    hashed_password VARCHAR(255) NOT NULL,
+    role VARCHAR(20) NOT NULL CHECK (role IN ('STUDENT', 'ADMIN')),
+    -- [宸茶皟鏁碷 鏂板瀛楁浠ユ敮鎸佺畻娉曠殑纭€х瓫閫?
+    gender VARCHAR(10) NOT NULL CHECK (gender IN ('MALE', 'FEMALE')),
+    college VARCHAR(100) NOT NULL,
+    is_special_needs BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 2. 鍖归厤鍛ㄦ湡琛?
+CREATE TABLE matching_cycles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL,
+    start_date TIMESTAMPTZ,
+    end_date TIMESTAMPTZ,
+    status VARCHAR(20) NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'OPEN', 'PROCESSING', 'COMPLETED')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 3. 鍔ㄦ€侀棶鍗风淮搴﹁〃
+CREATE TABLE survey_dimensions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    cycle_id UUID NOT NULL REFERENCES matching_cycles(id) ON DELETE CASCADE,
+    dimension_key VARCHAR(100) NOT NULL,
+    prompt TEXT NOT NULL,
+    -- [宸茶皟鏁碷 鏄庣‘缁村害鐨勭敤閫?
+    dimension_type VARCHAR(20) NOT NULL CHECK (dimension_type IN ('HARD_FILTER', 'SOFT_FACTOR')),
+    -- [宸茶皟鏁碷 澧炲姞澶嶅悎绫诲瀷
+    response_type VARCHAR(20) NOT NULL CHECK (response_type IN ('SCALE', 'SINGLE_CHOICE', 'COMPOSITE')),
+    weight DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+    -- [宸茶皟鏁碷 鏂板瀛楁鏀寔澶嶅悎缁村害
+    parent_dimension_key VARCHAR(100),
+    -- [宸茶皟鏁碷 鏂板瀛楁鏀寔鍙嶅悜璁″垎
+    is_reverse_scored BOOLEAN NOT NULL DEFAULT FALSE,
+    UNIQUE(cycle_id, dimension_key)
+);
+
+-- 4. 缁村害閫夐」琛?
+CREATE TABLE dimension_options (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    dimension_id UUID NOT NULL REFERENCES survey_dimensions(id) ON DELETE CASCADE,
+    option_text VARCHAR(255) NOT NULL,
+    option_value DOUBLE PRECISION NOT NULL
+);
+
+-- 5. 瀛︾敓绛旀琛?
+CREATE TABLE user_responses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    dimension_id UUID NOT NULL REFERENCES survey_dimensions(id) ON DELETE CASCADE,
+    -- [宸茶皟鏁碷 瀛樺偍鍘熷鍊硷紝棰勫鐞嗗湪鍚庣杩涜
+    raw_value DOUBLE PRECISION NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(user_id, dimension_id)
+);
+
+-- 6. 瀹胯垗璧勬簮 - 妤兼爧
+CREATE TABLE dorm_buildings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(100) NOT NULL UNIQUE
+);
+
+-- 7. 瀹胯垗璧勬簮 - 鎴块棿
+CREATE TABLE dorm_rooms (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    building_id UUID NOT NULL REFERENCES dorm_buildings(id) ON DELETE CASCADE,
+    room_number VARCHAR(20) NOT NULL,
+    capacity INT NOT NULL,
+    -- [宸茶皟鏁碷 涓?users 琛ㄧ殑 gender 涓ユ牸瀵瑰簲
+    gender_type VARCHAR(20) NOT NULL CHECK (gender_type IN ('MALE', 'FEMALE')),
+    UNIQUE(building_id, room_number)
+);
+
+-- 8. 瀹胯垗璧勬簮 - 搴婁綅
+CREATE TABLE beds (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    room_id UUID NOT NULL REFERENCES dorm_rooms(id) ON DELETE CASCADE,
+    bed_number INT NOT NULL,
+    UNIQUE(room_id, bed_number)
+);
+
+-- 9. 鏈€缁堝尮閰嶇粨鏋滆〃
+CREATE TABLE matching_results (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    cycle_id UUID NOT NULL REFERENCES matching_cycles(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE UNIQUE,
+    bed_id UUID NOT NULL REFERENCES beds(id) ON DELETE CASCADE UNIQUE,
+    match_group_id UUID NOT NULL
+);
+
+-- 10. 鍏ヤ綇鍚庡弽棣堣〃
+CREATE TABLE feedback (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    cycle_id UUID NOT NULL REFERENCES matching_cycles(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    is_anonymous BOOLEAN NOT NULL DEFAULT FALSE,
+    rating INT CHECK (rating >= 1 AND rating <= 5),
+    comment TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 11. 璋冨鐢宠琛?
+CREATE TABLE swap_requests (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    cycle_id UUID NOT NULL REFERENCES matching_cycles(id) ON DELETE CASCADE,
+    reason TEXT NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED')),
+    admin_comment TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 12. 鑷姩鍖栭€氱煡琛?
+CREATE TABLE notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    message TEXT NOT NULL,
+    link_url VARCHAR(255),
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 13. 鍐呭鍙戝竷琛?(蹇冪悊鍋ュ悍/瀹胯垗鏂囧寲)
+CREATE TABLE content_articles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title VARCHAR(255) NOT NULL,
+    content TEXT NOT NULL,
+    category VARCHAR(50) NOT NULL,
+    author_id UUID REFERENCES users(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+----------
+.\make_files.ps1:
+<#
+.SYNOPSIS
+鍒涘缓鍖归厤鍛ㄦ湡涓庨棶鍗风鐞嗗姛鑳芥墍闇€鐨勭┖鐧絁ava鏂囦欢锛堜粎褰撴枃浠朵笉瀛樺湪鏃讹級銆?
+
+.DESCRIPTION
+璇ヨ剼鏈細鍦ㄩ」鐩牴鐩綍涓嬪垱寤烘寚瀹氱殑Java鏂囦欢鍙婂叾鐖剁洰褰曠粨鏋勶紝涓嶄細瑕嗙洊宸插瓨鍦ㄧ殑鏂囦欢銆?
+#>
+
+# 瀹氫箟闇€瑕佸垱寤虹殑鏂囦欢璺緞鍒楄〃锛堢浉瀵逛簬椤圭洰鏍圭洰褰曪級
+$targetFiles = @(
+    "src/main/java/com/smartdorm/backend/entity/MatchingCycle.java",
+    "src/main/java/com/smartdorm/backend/entity/SurveyDimension.java",
+    "src/main/java/com/smartdorm/backend/entity/DimensionOption.java",
+    "src/main/java/com/smartdorm/backend/repository/MatchingCycleRepository.java",
+    "src/main/java/com/smartdorm/backend/repository/SurveyDimensionRepository.java",
+    "src/main/java/com/smartdorm/backend/dto/CycleDtos.java",
+    "src/main/java/com/smartdorm/backend/mapper/CycleMapper.java",
+    "src/main/java/com/smartdorm/backend/service/CycleManagementService.java",
+    "src/main/java/com/smartdorm/backend/controller/CycleController.java",
+    "src/test/java/com/smartdorm/backend/controller/CycleControllerIntegrationTest.java"
+)
+
+# 寰幆澶勭悊姣忎釜鐩爣鏂囦欢
+foreach ($filePath in $targetFiles) {
+    # 妫€鏌ユ枃浠舵槸鍚﹀凡瀛樺湪
+    if (-not (Test-Path -Path $filePath -PathType Leaf)) {
+        # 鍒涘缓鐖剁洰褰曪紙濡傛灉涓嶅瓨鍦級
+        $parentDir = Split-Path -Path $filePath -Parent
+        if (-not (Test-Path -Path $parentDir -PathType Container)) {
+            New-Item -Path $parentDir -ItemType Directory -Force | Out-Null
+            Write-Host "鍒涘缓鐩綍: $parentDir"
+        }
+
+        # 鍒涘缓绌虹櫧鏂囦欢
+        New-Item -Path $filePath -ItemType File | Out-Null
+        Write-Host "鍒涘缓鏂囦欢: $filePath"
+    } else {
+        Write-Host "璺宠繃宸插瓨鍦ㄧ殑鏂囦欢: $filePath"
+    }
+}
+
+Write-Host "done"
+
+----------
+.\pom.xml:
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.2.0</version> <!-- 浣跨敤 Spring Boot 3.2.0 -->
+        <relativePath/> <!-- lookup parent from repository -->
+    </parent>
+    <groupId>com.smartdorm</groupId>
+    <artifactId>backend</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <name>backend</name>
+    <description>鏅烘収瀹胯垗鍒嗛厤绯荤粺鍚庣</description>
+    <properties>
+        <java.version>17</java.version>
+    </properties>
+    <dependencies>
+        <!-- Spring Boot Web: for building RESTful APIs -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- Spring Data JPA: for database interaction -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+
+        <!-- Spring Security: for authentication and authorization -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        
+        <!-- Validation: for validating DTOs -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- PostgreSQL Driver -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Lombok: to reduce boilerplate code (getters, setters, etc.) -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- JWT Library (Auth0): for creating and verifying JWTs -->
+        <dependency>
+            <groupId>com.auth0</groupId>
+            <artifactId>java-jwt</artifactId>
+            <version>4.4.0</version>
+        </dependency>
+
+        <!-- Spring Boot Test -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>1.19.7</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>1.19.7</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+----------
+.\src\main\java\com\smartdorm\backend\BackendApplication.java:
+package com.smartdorm.backend;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class BackendApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(BackendApplication.class, args);
+    }
+
+}
+----------
+.\src\main\java\com\smartdorm\backend\config\DataSeeder.java:
+package com.smartdorm.backend.config;
+
+import com.smartdorm.backend.entity.User;
+import com.smartdorm.backend.repository.UserRepository;
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Component;
+
+@Component
+public class DataSeeder implements CommandLineRunner {
+
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+
+    public DataSeeder(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+    }
+
+    @Override
+    public void run(String... args) throws Exception {
+        // Create a default admin user if not exists
+        if (userRepository.findByStudentId("admin").isEmpty()) {
+            User adminUser = new User();
+            adminUser.setStudentId("admin");
+            adminUser.setName("Administrator");
+            // IMPORTANT: The password is "password"
+            adminUser.setPassword(passwordEncoder.encode("password"));
+            adminUser.setRole("ADMIN");
+            adminUser.setGender("MALE");
+            adminUser.setCollege("System Administration");
+            userRepository.save(adminUser);
+            System.out.println("====== Default admin user created. Username: admin, Password: password ======");
+        }
+    }
+}
+----------
+.\src\main\java\com\smartdorm\backend\config\SecurityConfig.java:
+package com.smartdorm.backend.config;
+
+import com.smartdorm.backend.security.JwtAccessDeniedHandler;
+import com.smartdorm.backend.security.JwtAuthenticationEntryPoint;
+import com.smartdorm.backend.security.JwtRequestFilter;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
+@Configuration
+@EnableWebSecurity
+@EnableMethodSecurity(prePostEnabled = true) // To enable @PreAuthorize
+public class SecurityConfig {
+
+    private final JwtRequestFilter jwtRequestFilter;
+    private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint; // 娉ㄥ叆璁よ瘉鍏ュ彛鐐?
+    private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
+
+    // 鏋勯€犳柟娉曟敞鍏ワ紙Spring Boot 2.7+鎺ㄨ崘锛?
+    public SecurityConfig(JwtRequestFilter jwtRequestFilter,
+                          JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint,
+                          JwtAccessDeniedHandler jwtAccessDeniedHandler) {
+        this.jwtRequestFilter = jwtRequestFilter;
+        this.jwtAuthenticationEntryPoint = jwtAuthenticationEntryPoint;
+        this.jwtAccessDeniedHandler = jwtAccessDeniedHandler;
+    }
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) throws Exception {
+        return authenticationConfiguration.getAuthenticationManager();
+    }
+
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http
+                // **鍏抽敭淇锛氫娇鐢ㄦ槑纭殑鏂瑰紡绂佺敤 CSRF**
+                .csrf(AbstractHttpConfigurer::disable)
+                .exceptionHandling(exceptions -> exceptions
+                        .authenticationEntryPoint(jwtAuthenticationEntryPoint)
+                        .accessDeniedHandler(jwtAccessDeniedHandler)
+                )
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/auth/login", "/ping").permitAll()
+                        .requestMatchers("/**").authenticated()
+                        .anyRequest().denyAll()
+                )
+                // 閰嶇疆浼氳瘽绠＄悊涓烘棤鐘舵€侊紝鍥犱负鎴戜滑浣跨敤JWT
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // 鍦ㄦ爣鍑嗙殑鐢ㄦ埛鍚嶅瘑鐮佽璇佽繃婊ゅ櫒涔嬪墠锛屾坊鍔犳垜浠殑JWT杩囨护鍣?
+                .addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class);
+        return http.build();
+    }
+}
+----------
+.\src\main\java\com\smartdorm\backend\controller\AuthController.java:
+package com.smartdorm.backend.controller;
+
+import com.smartdorm.backend.dto.LoginRequest;
+import com.smartdorm.backend.dto.LoginResponse;
+import com.smartdorm.backend.service.AuthService;
+import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/auth")
+public class AuthController {
+
+    private final AuthService authService;
+
+    public AuthController(AuthService authService) {
+        this.authService = authService;
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest loginRequest) {
+        return ResponseEntity.ok(authService.login(loginRequest));
+    }
+}
+----------
+.\src\main\java\com\smartdorm\backend\controller\CycleController.java:
+package com.smartdorm.backend.controller;
+
+import com.smartdorm.backend.dto.CycleDtos.*;
+import com.smartdorm.backend.service.CycleManagementService;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/admin/cycles")
+@PreAuthorize("hasRole('ADMIN')")
+public class CycleController {
+
+    private final CycleManagementService cycleService;
+
+    public CycleController(CycleManagementService cycleService) {
+        this.cycleService = cycleService;
+    }
+
+    // --- Cycle Endpoints ---
+    @PostMapping
+    public ResponseEntity<MatchingCycleDto> createCycle(@Valid @RequestBody MatchingCycleCreateDto dto) {
+        return new ResponseEntity<>(cycleService.createCycle(dto), HttpStatus.CREATED);
+    }
+
+    @GetMapping
+    public ResponseEntity<List<MatchingCycleDto>> getAllCycles() {
+        return ResponseEntity.ok(cycleService.getAllCycles());
+    }
+
+    @GetMapping("/{cycleId}")
+    public ResponseEntity<MatchingCycleDto> getCycleById(@PathVariable UUID cycleId) {
+        return ResponseEntity.ok(cycleService.getCycleById(cycleId));
+    }
+
+    @PutMapping("/{cycleId}")
+    public ResponseEntity<MatchingCycleDto> updateCycle(@PathVariable UUID cycleId, @Valid @RequestBody MatchingCycleUpdateDto dto) {
+        return ResponseEntity.ok(cycleService.updateCycle(cycleId, dto));
+    }
+
+    @DeleteMapping("/{cycleId}")
+    public ResponseEntity<Void> deleteCycle(@PathVariable UUID cycleId) {
+        cycleService.deleteCycle(cycleId);
+        return ResponseEntity.noContent().build();
+    }
+
+    // --- Dimension Endpoints ---
+    @PostMapping("/{cycleId}/dimensions")
+    public ResponseEntity<SurveyDimensionDto> createDimension(@PathVariable UUID cycleId, @Valid @RequestBody SurveyDimensionCreateDto dto) {
+        return new ResponseEntity<>(cycleService.createDimensionForCycle(cycleId, dto), HttpStatus.CREATED);
+    }
+
+    @GetMapping("/{cycleId}/dimensions")
+    public ResponseEntity<List<SurveyDimensionDto>> getDimensions(@PathVariable UUID cycleId) {
+        return ResponseEntity.ok(cycleService.getDimensionsForCycle(cycleId));
+    }
+
+    @PutMapping("/{cycleId}/dimensions/{dimensionId}")
+    public ResponseEntity<SurveyDimensionDto> updateDimension(@PathVariable UUID cycleId, @PathVariable UUID dimensionId, @Valid @RequestBody SurveyDimensionUpdateDto dto) {
+        // cycleId is not strictly needed for the update logic but good for RESTful path structure
+        return ResponseEntity.ok(cycleService.updateDimension(dimensionId, dto));
+    }
+
+    @DeleteMapping("/{cycleId}/dimensions/{dimensionId}")
+    public ResponseEntity<Void> deleteDimension(@PathVariable UUID cycleId, @PathVariable UUID dimensionId) {
+        cycleService.deleteDimension(dimensionId);
+        return ResponseEntity.noContent().build();
+    }
+}
+----------
+.\src\main\java\com\smartdorm\backend\controller\DormResourceController.java:
+package com.smartdorm.backend.controller;
+
+import com.smartdorm.backend.dto.DormDtos.*;
+import com.smartdorm.backend.service.DormResourceService;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/admin")
+@PreAuthorize("hasRole('ADMIN')") // Secure all endpoints in this controller
+public class DormResourceController {
+
+    private final DormResourceService dormResourceService;
+
+    public DormResourceController(DormResourceService dormResourceService) {
+        this.dormResourceService = dormResourceService;
+    }
+
+    // --- Building Endpoints ---
+    @GetMapping("/dorm-buildings")
+    public ResponseEntity<List<DormBuildingDto>> getAllBuildings() {
+        return ResponseEntity.ok(dormResourceService.getAllBuildings());
+    }
+
+    @PostMapping("/dorm-buildings")
+    public ResponseEntity<DormBuildingDto> createBuilding(@Valid @RequestBody BuildingCreateUpdateDto dto) {
+        return new ResponseEntity<>(dormResourceService.createBuilding(dto), HttpStatus.CREATED);
+    }
+
+    @PutMapping("/dorm-buildings/{buildingId}")
+    public ResponseEntity<DormBuildingDto> updateBuilding(@PathVariable UUID buildingId, @Valid @RequestBody BuildingCreateUpdateDto dto) {
+        return ResponseEntity.ok(dormResourceService.updateBuilding(buildingId, dto));
+    }
+
+    @DeleteMapping("/dorm-buildings/{buildingId}")
+    public ResponseEntity<Void> deleteBuilding(@PathVariable UUID buildingId) {
+        dormResourceService.deleteBuilding(buildingId);
+        return ResponseEntity.noContent().build();
+    }
+
+    // --- Room Endpoints ---
+    @PostMapping("/dorm-rooms")
+    public ResponseEntity<DormRoomDto> createRoom(@Valid @RequestBody RoomCreateUpdateDto dto) {
+        return new ResponseEntity<>(dormResourceService.createRoom(dto), HttpStatus.CREATED);
+    }
+
+    @PutMapping("/dorm-rooms/{roomId}")
+    public ResponseEntity<DormRoomDto> updateRoom(@PathVariable UUID roomId, @Valid @RequestBody RoomCreateUpdateDto dto) {
+        return ResponseEntity.ok(dormResourceService.updateRoom(roomId, dto));
+    }
+
+    @DeleteMapping("/dorm-rooms/{roomId}")
+    public ResponseEntity<Void> deleteRoom(@PathVariable UUID roomId) {
+        dormResourceService.deleteRoom(roomId);
+        return ResponseEntity.noContent().build();
+    }
+
+    // --- Bed Endpoints ---
+    @PostMapping("/rooms/{roomId}/beds")
+    public ResponseEntity<BedsCreatedResponseDto> createBeds(@PathVariable UUID roomId, @Valid @RequestBody BedCreateRequestDto dto) {
+        BedsCreatedResponseDto response = dormResourceService.createBedsForRoom(roomId, dto);
+        return new ResponseEntity<>(response, HttpStatus.CREATED);
+    }
+
+    @DeleteMapping("/beds/{bedId}")
+    public ResponseEntity<Void> deleteBed(@PathVariable UUID bedId) {
+        dormResourceService.deleteBed(bedId);
+        return ResponseEntity.noContent().build();
+    }
+}
+----------
+.\src\main\java\com\smartdorm\backend\controller\HealthCheckController.java:
+package com.smartdorm.backend.controller;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+import java.util.Map;
+
+@RestController
+public class HealthCheckController {
+
+    @GetMapping("/ping")
+    public Map<String, String> ping() {
+        return Map.of("status", "ok", "message", "Service is running!");
+    }
+}
+----------
+.\src\main\java\com\smartdorm\backend\controller\UserController.java:
+// src/main/java/com/smartdorm/backend/controller/UserController.java
+package com.smartdorm.backend.controller;
+
+import com.smartdorm.backend.dto.UserDto;
+import com.smartdorm.backend.entity.User;
+import com.smartdorm.backend.repository.UserRepository;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * Controller to handle user-related operations.
+ */
+@RestController
+@RequestMapping("/users")
+public class UserController {
+
+    private final UserRepository userRepository;
+
+    public UserController(UserRepository userRepository) {
+        this.userRepository = userRepository;
+    }
+
+    /**
+     * Retrieves the details of the currently authenticated user.
+     * This is a protected endpoint.
+     *
+     * @param userDetails The details of the authenticated user, injected by Spring Security.
+     * @return A DTO with the current user's information.
+     */
+    @GetMapping("/me")
+    public ResponseEntity<UserDto> getCurrentUser(@AuthenticationPrincipal UserDetails userDetails) {
+        // Find the full user entity from the database using the username from the token
+        User user = userRepository.findByStudentId(userDetails.getUsername())
+                .orElseThrow(() -> new IllegalStateException("Authenticated user not found in database"));
+
+        // Map the entity to a safe DTO (without password)
+        UserDto userDto = new UserDto(user.getId(), user.getStudentId(), user.getName(), user.getRole(), user.getGender(), user.getCollege());
+        return ResponseEntity.ok(userDto);
+    }
+}
+----------
+.\src\main\java\com\smartdorm\backend\dto\CycleDtos.java:
+package com.smartdorm.backend.dto;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.PositiveOrZero;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+
+public class CycleDtos {
+
+    // --- Response DTOs ---
+    public record MatchingCycleDto(UUID id, String name, Instant startDate, Instant endDate, String status) {}
+
+    public record DimensionOptionDto(UUID id, String optionText, double optionValue) {}
+
+    public record SurveyDimensionDto(
+            UUID id,
+            String dimensionKey,
+            String prompt,
+            String dimensionType,
+            String responseType,
+            double weight,
+            String parentDimensionKey,
+            boolean isReverseScored,
+            List<DimensionOptionDto> options
+    ) {}
+
+
+    // --- Request/Create/Update DTOs ---
+    public record MatchingCycleCreateDto(
+            @NotEmpty String name,
+            Instant startDate,
+            Instant endDate
+    ) {}
+
+    public record MatchingCycleUpdateDto(
+            String name,
+            Instant startDate,
+            Instant endDate,
+            @Pattern(regexp = "DRAFT|OPEN|COMPLETED", message = "Status must be DRAFT, OPEN, or COMPLETED") String status
+    ) {}
+
+    public record OptionCreateDto(
+            @NotEmpty String optionText,
+            @NotNull Double optionValue
+    ) {}
+
+    public record SurveyDimensionCreateDto(
+            @NotEmpty String dimensionKey,
+            @NotEmpty String prompt,
+            @NotEmpty @Pattern(regexp = "HARD_FILTER|SOFT_FACTOR", message = "dimensionType must be HARD_FILTER or SOFT_FACTOR")
+            String dimensionType,
+            @NotEmpty @Pattern(regexp = "SCALE|SINGLE_CHOICE|COMPOSITE", message = "responseType must be SCALE, SINGLE_CHOICE, or COMPOSITE")
+            String responseType,
+            @NotNull @PositiveOrZero Double weight,
+            String parentDimensionKey,
+            boolean isReverseScored,
+            @Valid List<OptionCreateDto> options
+    ) {}
+
+    public record SurveyDimensionUpdateDto(
+            @NotEmpty String prompt,
+            @NotNull @PositiveOrZero Double weight,
+            boolean isReverseScored
+    ) {}
+}
+----------
+.\src\main\java\com\smartdorm\backend\dto\DormDtos.java:
+package com.smartdorm.backend.dto;
+
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+
+import java.util.List;
+import java.util.UUID;
+
+// Using a single file for related, simple records can be convenient.
+
+public class DormDtos {
+
+    // --- Response DTOs ---
+
+    public record DormBuildingDto(UUID id, String name) {}
+
+    public record DormRoomDto(UUID id, UUID buildingId, String roomNumber, int capacity, String genderType) {}
+
+    public record BedDto(UUID id, UUID roomId, int bedNumber) {}
+
+    // --- Request DTOs ---
+
+    public record BuildingCreateUpdateDto(@NotBlank String name) {}
+
+    public record RoomCreateUpdateDto(
+            @NotNull UUID buildingId,
+            @NotBlank String roomNumber,
+            @Min(1) int capacity,
+            @NotBlank @Pattern(regexp = "MALE|FEMALE", message = "Gender must be MALE or FEMALE") String genderType
+    ) {}
+
+    public record BedCreateRequestDto(@NotNull @Min(1) Integer bedCount) {}
+
+    public record BedsCreatedResponseDto(int count, List<BedDto> beds) {}
+}
+----------
+.\src\main\java\com\smartdorm\backend\dto\LoginRequest.java:
+package com.smartdorm.backend.dto;
+
+import jakarta.validation.constraints.NotBlank;
+
+public record LoginRequest(
+        @NotBlank String studentId,
+        @NotBlank String password
+) {}
+----------
+.\src\main\java\com\smartdorm\backend\dto\LoginResponse.java:
+package com.smartdorm.backend.dto;
+
+public record LoginResponse(
+        String token,
+        UserDto user
+) {}
+----------
+.\src\main\java\com\smartdorm\backend\dto\UserDto.java:
+package com.smartdorm.backend.dto;
+
+import java.util.UUID;
+
+// DTO to safely expose user data, without the password
+public record UserDto(
+        UUID id,
+        String studentId,
+        String name,
+        String role,
+        String gender,
+        String college
+) {}
+----------
+.\src\main\java\com\smartdorm\backend\entity\Bed.java:
+package com.smartdorm.backend.entity;
+
+import jakarta.persistence.*;
+import lombok.Data;
+import java.util.UUID;
+
+@Data
+@Entity
+@Table(name = "beds", uniqueConstraints = {
+        @UniqueConstraint(columnNames = {"room_id", "bed_number"})
+})
+public class Bed {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "room_id", nullable = false)
+    private DormRoom room;
+
+    @Column(name = "bed_number", nullable = false)
+    private int bedNumber;
+}
+----------
+.\src\main\java\com\smartdorm\backend\entity\DimensionOption.java:
+package com.smartdorm.backend.entity;
+
+import jakarta.persistence.*;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.ToString;
+import java.util.UUID;
+
+@Data
+@Entity
+@Table(name = "dimension_options")
+public class DimensionOption {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "dimension_id", nullable = false)
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    private SurveyDimension dimension;
+
+    @Column(name = "option_text", nullable = false, length = 255)
+    private String optionText;
+
+    @Column(name = "option_value", nullable = false)
+    private double optionValue;
+}
+----------
+.\src\main\java\com\smartdorm\backend\entity\DormBuilding.java:
+package com.smartdorm.backend.entity;
+
+import jakarta.persistence.*;
+import lombok.Data;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+@Data
+@Entity
+@Table(name = "dorm_buildings")
+public class DormBuilding {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @Column(nullable = false, unique = true, length = 100)
+    private String name;
+
+    @OneToMany(mappedBy = "building", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<DormRoom> rooms = new ArrayList<>();
+}
+----------
+.\src\main\java\com\smartdorm\backend\entity\DormRoom.java:
+package com.smartdorm.backend.entity;
+
+import jakarta.persistence.*;
+import lombok.Data;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+@Data
+@Entity
+@Table(name = "dorm_rooms", uniqueConstraints = {
+        @UniqueConstraint(columnNames = {"building_id", "room_number"})
+})
+public class DormRoom {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "building_id", nullable = false)
+    private DormBuilding building;
+
+    @Column(name = "room_number", nullable = false, length = 20)
+    private String roomNumber;
+
+    @Column(nullable = false)
+    private int capacity;
+
+    @Column(name = "gender_type", nullable = false, length = 20)
+    private String genderType; // "MALE" or "FEMALE"
+
+    @OneToMany(mappedBy = "room", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Bed> beds = new ArrayList<>();
+}
+----------
+.\src\main\java\com\smartdorm\backend\entity\MatchingCycle.java:
+package com.smartdorm.backend.entity;
+
+import jakarta.persistence.*;
+import lombok.Data;
+import org.hibernate.annotations.CreationTimestamp;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+@Data
+@Entity
+@Table(name = "matching_cycles")
+public class MatchingCycle {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @Column(nullable = false, length = 255)
+    private String name;
+
+    private Instant startDate;
+    private Instant endDate;
+
+    @Column(nullable = false, length = 20)
+    private String status = "DRAFT"; // DRAFT, OPEN, PROCESSING, COMPLETED
+
+    @CreationTimestamp
+    private Instant createdAt;
+
+    @OneToMany(mappedBy = "cycle", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private List<SurveyDimension> dimensions = new ArrayList<>();
+}
+----------
+.\src\main\java\com\smartdorm\backend\entity\SurveyDimension.java:
+package com.smartdorm.backend.entity;
+
+import jakarta.persistence.*;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.ToString;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+@Data
+@Entity
+@Table(name = "survey_dimensions", uniqueConstraints = {
+        @UniqueConstraint(columnNames = {"cycle_id", "dimension_key"})
+})
+public class SurveyDimension {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cycle_id", nullable = false)
+    @ToString.Exclude // Avoid circular dependency in toString
+    @EqualsAndHashCode.Exclude // Avoid circular dependency in equals/hashCode
+    private MatchingCycle cycle;
+
+    @Column(name = "dimension_key", nullable = false, length = 100)
+    private String dimensionKey;
+
+    @Column(nullable = false, columnDefinition = "TEXT")
+    private String prompt;
+
+    @Column(name = "dimension_type", nullable = false, length = 20)
+    private String dimensionType; // HARD_FILTER, SOFT_FACTOR
+
+    @Column(name = "response_type", nullable = false, length = 20)
+    private String responseType; // SCALE, SINGLE_CHOICE, COMPOSITE
+
+    @Column(nullable = false)
+    private double weight = 1.0;
+
+    @Column(name = "parent_dimension_key", length = 100)
+    private String parentDimensionKey;
+
+    @Column(name = "is_reverse_scored", nullable = false)
+    private boolean isReverseScored = false;
+
+    @OneToMany(mappedBy = "dimension", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    private List<DimensionOption> options = new ArrayList<>();
+}
+----------
+.\src\main\java\com\smartdorm\backend\entity\User.java:
+package com.smartdorm.backend.entity;
+
+import jakarta.persistence.*;
+import lombok.Data;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+
+import java.time.Instant;
+import java.util.UUID;
+
+@Data
+@Entity
+@Table(name = "users")
+public class User {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @Column(unique = true, nullable = false, length = 50)
+    private String studentId;
+
+    @Column(nullable = false, length = 100)
+    private String name;
+
+    @Column(name = "hashed_password", nullable = false)
+    private String password;
+
+    @Column(nullable = false, length = 20)
+    private String role; // "STUDENT" or "ADMIN"
+
+    @Column(nullable = false, length = 10)
+    private String gender; // "MALE" or "FEMALE"
+
+    @Column(nullable = false, length = 100)
+    private String college;
+
+    @Column(nullable = false)
+    private boolean isSpecialNeeds = false;
+
+    @CreationTimestamp
+    private Instant createdAt;
+
+    @UpdateTimestamp
+    private Instant updatedAt;
+}
+----------
+.\src\main\java\com\smartdorm\backend\exception\DataConflictException.java:
+package com.smartdorm.backend.exception;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.ResponseStatus;
+
+@ResponseStatus(HttpStatus.CONFLICT)
+public class DataConflictException extends RuntimeException {
+    public DataConflictException(String message) {
+        super(message);
+    }
+}
+----------
+.\src\main\java\com\smartdorm\backend\exception\GlobalExceptionHandler.java:
+// src/main/java/com/smartdorm/backend/exception/GlobalExceptionHandler.java
+package com.smartdorm.backend.exception;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.web.bind.annotation.ControllerAdvice;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+
+import java.time.Instant;
+import java.util.Map;
+
+@ControllerAdvice
+public class GlobalExceptionHandler {
+
+    @ExceptionHandler(BadCredentialsException.class)
+    public ResponseEntity<Map<String, Object>> handleBadCredentialsException(BadCredentialsException ex) {
+        return ResponseEntity
+                .status(HttpStatus.UNAUTHORIZED)
+                .body(Map.of(
+                        "timestamp", Instant.now(),
+                        "status", HttpStatus.UNAUTHORIZED.value(),
+                        "error", "Unauthorized",
+                        "message", ex.getMessage()
+                ));
+    }
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleResourceNotFoundException(ResourceNotFoundException ex) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(Map.of(
+                        "timestamp", Instant.now(),
+                        "status", HttpStatus.NOT_FOUND.value(),
+                        "error", "Not Found",
+                        "message", ex.getMessage()
+                ));
+    }
+
+    @ExceptionHandler(DataConflictException.class)
+    public ResponseEntity<Map<String, Object>> handleDataConflictException(DataConflictException ex) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(Map.of(
+                        "timestamp", Instant.now(),
+                        "status", HttpStatus.CONFLICT.value(),
+                        "error", "Conflict",
+                        "message", ex.getMessage()
+                ));
+    }
+}
+----------
+.\src\main\java\com\smartdorm\backend\exception\ResourceNotFoundException.java:
+package com.smartdorm.backend.exception;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.ResponseStatus;
+
+@ResponseStatus(HttpStatus.NOT_FOUND)
+public class ResourceNotFoundException extends RuntimeException {
+    public ResourceNotFoundException(String message) {
+        super(message);
+    }
+}
+----------
+.\src\main\java\com\smartdorm\backend\mapper\CycleMapper.java:
+package com.smartdorm.backend.mapper;
+
+import com.smartdorm.backend.dto.CycleDtos.*;
+import com.smartdorm.backend.entity.DimensionOption;
+import com.smartdorm.backend.entity.MatchingCycle;
+import com.smartdorm.backend.entity.SurveyDimension;
+import org.springframework.stereotype.Component;
+import java.util.stream.Collectors;
+
+@Component
+public class CycleMapper {
+
+    public MatchingCycleDto toDto(MatchingCycle cycle) {
+        return new MatchingCycleDto(cycle.getId(), cycle.getName(), cycle.getStartDate(), cycle.getEndDate(), cycle.getStatus());
+    }
+
+    public DimensionOptionDto toDto(DimensionOption option) {
+        return new DimensionOptionDto(option.getId(), option.getOptionText(), option.getOptionValue());
+    }
+
+    public SurveyDimensionDto toDto(SurveyDimension dimension) {
+        return new SurveyDimensionDto(
+                dimension.getId(),
+                dimension.getDimensionKey(),
+                dimension.getPrompt(),
+                dimension.getDimensionType(),
+                dimension.getResponseType(),
+                dimension.getWeight(),
+                dimension.getParentDimensionKey(),
+                dimension.isReverseScored(),
+                dimension.getOptions().stream().map(this::toDto).collect(Collectors.toList())
+        );
+    }
+}
+----------
+.\src\main\java\com\smartdorm\backend\mapper\DormMapper.java:
+package com.smartdorm.backend.mapper;
+
+import com.smartdorm.backend.dto.DormDtos.*;
+import com.smartdorm.backend.entity.Bed;
+import com.smartdorm.backend.entity.DormBuilding;
+import com.smartdorm.backend.entity.DormRoom;
+import org.springframework.stereotype.Component;
+
+@Component
+public class DormMapper {
+
+    public DormBuildingDto toDto(DormBuilding building) {
+        return new DormBuildingDto(building.getId(), building.getName());
+    }
+
+    public DormRoomDto toDto(DormRoom room) {
+        return new DormRoomDto(
+                room.getId(),
+                room.getBuilding().getId(),
+                room.getRoomNumber(),
+                room.getCapacity(),
+                room.getGenderType()
+        );
+    }
+
+    public BedDto toDto(Bed bed) {
+        return new BedDto(bed.getId(), bed.getRoom().getId(), bed.getBedNumber());
+    }
+}
+----------
+.\src\main\java\com\smartdorm\backend\repository\BedRepository.java:
+package com.smartdorm.backend.repository;
+
+import com.smartdorm.backend.entity.Bed;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.UUID;
+
+@Repository
+public interface BedRepository extends JpaRepository<Bed, UUID> {
+    // 鐢ㄤ簬妫€鏌ユ埧闂翠笅鏄惁鏈夊簥浣?
+    boolean existsByRoomId(UUID roomId);
+}
+----------
+.\src\main\java\com\smartdorm\backend\repository\DormBuildingRepository.java:
+package com.smartdorm.backend.repository;
+
+import com.smartdorm.backend.entity.DormBuilding;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.UUID;
+
+@Repository
+public interface DormBuildingRepository extends JpaRepository<DormBuilding, UUID> {
+}
+----------
+.\src\main\java\com\smartdorm\backend\repository\DormRoomRepository.java:
+package com.smartdorm.backend.repository;
+
+import com.smartdorm.backend.entity.DormRoom;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.UUID;
+
+@Repository
+public interface DormRoomRepository extends JpaRepository<DormRoom, UUID> {
+    // 鐢ㄤ簬妫€鏌ユゼ鏍嬩笅鏄惁鏈夋埧闂达紝姣斿姞杞芥暣涓垪琛ㄦ洿楂樻晥
+    boolean existsByBuildingId(UUID buildingId);
+}
+----------
+.\src\main\java\com\smartdorm\backend\repository\MatchingCycleRepository.java:
+package com.smartdorm.backend.repository;
+
+import com.smartdorm.backend.entity.MatchingCycle;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+import java.util.UUID;
+
+@Repository
+public interface MatchingCycleRepository extends JpaRepository<MatchingCycle, UUID> {
+}
+----------
+.\src\main\java\com\smartdorm\backend\repository\SurveyDimensionRepository.java:
+package com.smartdorm.backend.repository;
+
+import com.smartdorm.backend.entity.SurveyDimension;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.UUID;
+
+@Repository
+public interface SurveyDimensionRepository extends JpaRepository<SurveyDimension, UUID> {
+    List<SurveyDimension> findByCycleId(UUID cycleId);
+}
+----------
+.\src\main\java\com\smartdorm\backend\repository\UserRepository.java:
+package com.smartdorm.backend.repository;
+
+import com.smartdorm.backend.entity.User;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.Optional;
+import java.util.UUID;
+
+@Repository
+public interface UserRepository extends JpaRepository<User, UUID> {
+    Optional<User> findByStudentId(String studentId);
+}
+----------
+.\src\main\java\com\smartdorm\backend\security\JwtAccessDeniedHandler.java:
+package com.smartdorm.backend.security;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.stereotype.Component;
+
+import java.io.IOException;
+
+@Component
+public class JwtAccessDeniedHandler implements AccessDeniedHandler {
+
+    @Override
+    public void handle(HttpServletRequest request,
+                       HttpServletResponse response,
+                       AccessDeniedException accessDeniedException) throws IOException {
+        // 璁剧疆鍝嶅簲鐘舵€佺爜锛?03 Forbidden
+        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+        // 璁剧疆鍝嶅簲鍐呭绫诲瀷涓篔SON
+        response.setContentType("application/json");
+        // 鍐欏叆閿欒淇℃伅
+        response.getWriter().write("{\"error\": \"Forbidden\", \"message\": \"" + accessDeniedException.getMessage() + "\"}");
+    }
+}
+
+----------
+.\src\main\java\com\smartdorm\backend\security\JwtAuthenticationEntryPoint.java:
+package com.smartdorm.backend.security;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.web.AuthenticationEntryPoint;
+import org.springframework.stereotype.Component;
+
+import java.io.IOException;
+
+@Component
+public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint {
+
+    @Override
+    public void commence(HttpServletRequest request,
+                         HttpServletResponse response,
+                         AuthenticationException authException) throws IOException {
+        // 璁剧疆鍝嶅簲鐘舵€佺爜锛?01 Unauthorized
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        // 璁剧疆鍝嶅簲鍐呭绫诲瀷涓篔SON锛堢鍚圧EST API瑙勮寖锛?
+        response.setContentType("application/json");
+        // 鍐欏叆閿欒淇℃伅锛堝彲閫夛紝鏍规嵁闇€姹傝皟鏁达級
+        response.getWriter().write("{\"error\": \"Unauthorized\", \"message\": \"" + authException.getMessage() + "\"}");
+    }
+}
+
+----------
+.\src\main\java\com\smartdorm\backend\security\JwtRequestFilter.java:
+package com.smartdorm.backend.security;
+
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.lang.NonNull;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import java.io.IOException;
+
+@Component
+public class JwtRequestFilter extends OncePerRequestFilter {
+
+    private final JwtUtil jwtUtil;
+    private final UserDetailsService userDetailsService;
+
+    public JwtRequestFilter(JwtUtil jwtUtil, UserDetailsService userDetailsService) {
+        this.jwtUtil = jwtUtil;
+        this.userDetailsService = userDetailsService;
+    }
+
+    @Override
+    protected void doFilterInternal(@NonNull HttpServletRequest request,
+                                    @NonNull HttpServletResponse response,
+                                    @NonNull FilterChain filterChain) throws ServletException, IOException {
+
+        final String authHeader = request.getHeader("Authorization");
+        String username = null;
+        String jwt = null;
+
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            jwt = authHeader.substring(7);
+            username = jwtUtil.validateTokenAndGetUsername(jwt);
+        }
+
+        if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+            UserDetails userDetails = this.userDetailsService.loadUserByUsername(username);
+
+            UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
+                    userDetails, null, userDetails.getAuthorities());
+            authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+            SecurityContextHolder.getContext().setAuthentication(authToken);
+        }
+        filterChain.doFilter(request, response);
+    }
+}
+----------
+.\src\main\java\com\smartdorm\backend\security\JwtUtil.java:
+package com.smartdorm.backend.security;
+
+import com.auth0.jwt.JWT;
+import com.auth0.jwt.JWTVerifier;
+import com.auth0.jwt.algorithms.Algorithm;
+import com.auth0.jwt.exceptions.JWTVerificationException;
+import com.auth0.jwt.interfaces.DecodedJWT;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.stereotype.Component;
+
+import java.util.Date;
+
+@Component
+public class JwtUtil {
+
+    @Value("${jwt.secret}")
+    private String secret;
+
+    @Value("${jwt.expiration-ms}")
+    private long expirationMs;
+
+    public String generateToken(UserDetails userDetails) {
+        Algorithm algorithm = Algorithm.HMAC256(secret);
+        return JWT.create()
+                .withSubject(userDetails.getUsername())
+                .withIssuedAt(new Date(System.currentTimeMillis()))
+                .withExpiresAt(new Date(System.currentTimeMillis() + expirationMs))
+                .sign(algorithm);
+    }
+
+    public String validateTokenAndGetUsername(String token) {
+        try {
+            Algorithm algorithm = Algorithm.HMAC256(secret);
+            JWTVerifier verifier = JWT.require(algorithm).build();
+            DecodedJWT decodedJWT = verifier.verify(token);
+            return decodedJWT.getSubject();
+        } catch (JWTVerificationException exception) {
+            // Invalid signature/claims
+            return null;
+        }
+    }
+}
+----------
+.\src\main\java\com\smartdorm\backend\security\UserDetailsServiceImpl.java:
+package com.smartdorm.backend.security;
+
+import com.smartdorm.backend.repository.UserRepository;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.stereotype.Service;
+
+import java.util.Collections;
+
+@Service
+public class UserDetailsServiceImpl implements UserDetailsService {
+
+    private final UserRepository userRepository;
+
+    public UserDetailsServiceImpl(UserRepository userRepository) {
+        this.userRepository = userRepository;
+    }
+
+    @Override
+    public UserDetails loadUserByUsername(String studentId) throws UsernameNotFoundException {
+        com.smartdorm.backend.entity.User user = userRepository.findByStudentId(studentId)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found with studentId: " + studentId));
+
+        return new User(
+                user.getStudentId(),
+                user.getPassword(),
+                Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + user.getRole()))
+        );
+    }
+}
+----------
+.\src\main\java\com\smartdorm\backend\service\AuthService.java:
+package com.smartdorm.backend.service;
+
+import com.smartdorm.backend.dto.*;
+import com.smartdorm.backend.entity.User;
+import com.smartdorm.backend.repository.UserRepository;
+import com.smartdorm.backend.security.JwtUtil;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.stereotype.Service;
+
+@Service
+public class AuthService {
+
+    private final AuthenticationManager authenticationManager;
+    private final UserDetailsService userDetailsService;
+    private final UserRepository userRepository;
+    private final JwtUtil jwtUtil;
+
+    public AuthService(AuthenticationManager authenticationManager, UserDetailsService userDetailsService, UserRepository userRepository, JwtUtil jwtUtil) {
+        this.authenticationManager = authenticationManager;
+        this.userDetailsService = userDetailsService;
+        this.userRepository = userRepository;
+        this.jwtUtil = jwtUtil;
+    }
+
+    public LoginResponse login(LoginRequest loginRequest) {
+        try {
+            authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(loginRequest.studentId(), loginRequest.password())
+            );
+        } catch (BadCredentialsException e) {
+            throw new BadCredentialsException("Invalid student ID or password");
+        }
+
+        final UserDetails userDetails = userDetailsService.loadUserByUsername(loginRequest.studentId());
+        final String token = jwtUtil.generateToken(userDetails);
+
+        // Fetch user entity to create UserDto
+        User user = userRepository.findByStudentId(loginRequest.studentId()).orElseThrow(() -> new UsernameNotFoundException("User not found after successful authentication for: " + loginRequest.studentId()));
+        UserDto userDto = new UserDto(user.getId(), user.getStudentId(), user.getName(), user.getRole(), user.getGender(), user.getCollege());
+
+        return new LoginResponse(token, userDto);
+    }
+}
+----------
+.\src\main\java\com\smartdorm\backend\service\CycleManagementService.java:
+package com.smartdorm.backend.service;
+
+import com.smartdorm.backend.dto.CycleDtos.*;
+import com.smartdorm.backend.entity.DimensionOption;
+import com.smartdorm.backend.entity.MatchingCycle;
+import com.smartdorm.backend.entity.SurveyDimension;
+import com.smartdorm.backend.exception.DataConflictException;
+import com.smartdorm.backend.exception.ResourceNotFoundException;
+import com.smartdorm.backend.mapper.CycleMapper;
+import com.smartdorm.backend.repository.MatchingCycleRepository;
+import com.smartdorm.backend.repository.SurveyDimensionRepository;
+import jakarta.transaction.Transactional;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+@Service
+@Transactional
+public class CycleManagementService {
+
+    private final MatchingCycleRepository cycleRepository;
+    private final SurveyDimensionRepository dimensionRepository;
+    private final CycleMapper cycleMapper;
+
+    public CycleManagementService(MatchingCycleRepository cycleRepository, SurveyDimensionRepository dimensionRepository, CycleMapper cycleMapper) {
+        this.cycleRepository = cycleRepository;
+        this.dimensionRepository = dimensionRepository;
+        this.cycleMapper = cycleMapper;
+    }
+
+    // --- Cycle Methods ---
+
+    public MatchingCycleDto createCycle(MatchingCycleCreateDto dto) {
+        MatchingCycle cycle = new MatchingCycle();
+        cycle.setName(dto.name());
+        cycle.setStartDate(dto.startDate());
+        cycle.setEndDate(dto.endDate());
+        return cycleMapper.toDto(cycleRepository.save(cycle));
+    }
+
+    public List<MatchingCycleDto> getAllCycles() {
+        return cycleRepository.findAll().stream().map(cycleMapper::toDto).collect(Collectors.toList());
+    }
+
+    public MatchingCycleDto getCycleById(UUID cycleId) {
+        return cycleRepository.findById(cycleId)
+                .map(cycleMapper::toDto)
+                .orElseThrow(() -> new ResourceNotFoundException("Cycle not found with id: " + cycleId));
+    }
+
+    public MatchingCycleDto updateCycle(UUID cycleId, MatchingCycleUpdateDto dto) {
+        MatchingCycle cycle = cycleRepository.findById(cycleId)
+                .orElseThrow(() -> new ResourceNotFoundException("Cycle not found with id: " + cycleId));
+        if(dto.name() != null) cycle.setName(dto.name());
+        if(dto.startDate() != null) cycle.setStartDate(dto.startDate());
+        if(dto.endDate() != null) cycle.setEndDate(dto.endDate());
+        if(dto.status() != null) cycle.setStatus(dto.status());
+        return cycleMapper.toDto(cycleRepository.save(cycle));
+    }
+
+    public void deleteCycle(UUID cycleId) {
+        MatchingCycle cycle = cycleRepository.findById(cycleId)
+                .orElseThrow(() -> new ResourceNotFoundException("Cycle not found with id: " + cycleId));
+        if (!"DRAFT".equals(cycle.getStatus())) {
+            throw new DataConflictException("Cannot delete cycle in status '" + cycle.getStatus() + "'. Only 'DRAFT' cycles can be deleted.");
+        }
+        cycleRepository.delete(cycle);
+    }
+
+    // --- Dimension Methods ---
+
+    public SurveyDimensionDto createDimensionForCycle(UUID cycleId, SurveyDimensionCreateDto dto) {
+        MatchingCycle cycle = cycleRepository.findById(cycleId)
+                .orElseThrow(() -> new ResourceNotFoundException("Cycle not found with id: " + cycleId));
+
+        SurveyDimension dimension = new SurveyDimension();
+        dimension.setCycle(cycle);
+        dimension.setDimensionKey(dto.dimensionKey());
+        dimension.setPrompt(dto.prompt());
+        dimension.setDimensionType(dto.dimensionType());
+        dimension.setResponseType(dto.responseType());
+        dimension.setWeight(dto.weight());
+        dimension.setParentDimensionKey(dto.parentDimensionKey());
+        dimension.setReverseScored(dto.isReverseScored());
+
+        if (dto.options() != null) {
+            List<DimensionOption> options = dto.options().stream().map(optDto -> {
+                DimensionOption option = new DimensionOption();
+                option.setOptionText(optDto.optionText());
+                option.setOptionValue(optDto.optionValue());
+                option.setDimension(dimension); // Link back to parent
+                return option;
+            }).collect(Collectors.toList());
+            dimension.getOptions().addAll(options);
+        }
+
+        return cycleMapper.toDto(dimensionRepository.save(dimension));
+    }
+
+    public List<SurveyDimensionDto> getDimensionsForCycle(UUID cycleId) {
+        if (!cycleRepository.existsById(cycleId)) {
+            throw new ResourceNotFoundException("Cycle not found with id: " + cycleId);
+        }
+        return dimensionRepository.findByCycleId(cycleId).stream()
+                .map(cycleMapper::toDto)
+                .collect(Collectors.toList());
+    }
+
+    public SurveyDimensionDto updateDimension(UUID dimensionId, SurveyDimensionUpdateDto dto) {
+        SurveyDimension dimension = dimensionRepository.findById(dimensionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Dimension not found with id: " + dimensionId));
+
+        dimension.setPrompt(dto.prompt());
+        dimension.setWeight(dto.weight());
+        dimension.setReverseScored(dto.isReverseScored());
+
+        return cycleMapper.toDto(dimensionRepository.save(dimension));
+    }
+
+    public void deleteDimension(UUID dimensionId) {
+        if (!dimensionRepository.existsById(dimensionId)) {
+            throw new ResourceNotFoundException("Dimension not found with id: " + dimensionId);
+        }
+        dimensionRepository.deleteById(dimensionId);
+    }
+}
+----------
+.\src\main\java\com\smartdorm\backend\service\DormResourceService.java:
+package com.smartdorm.backend.service;
+
+import com.smartdorm.backend.dto.DormDtos.*;
+import com.smartdorm.backend.entity.Bed;
+import com.smartdorm.backend.entity.DormBuilding;
+import com.smartdorm.backend.entity.DormRoom;
+import com.smartdorm.backend.exception.DataConflictException;
+import com.smartdorm.backend.exception.ResourceNotFoundException;
+import com.smartdorm.backend.mapper.DormMapper;
+import com.smartdorm.backend.repository.BedRepository;
+import com.smartdorm.backend.repository.DormBuildingRepository;
+import com.smartdorm.backend.repository.DormRoomRepository;
+import jakarta.transaction.Transactional;
+import org.springframework.stereotype.Service;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+
+@Service
+@Transactional
+public class DormResourceService {
+
+    private final DormBuildingRepository buildingRepository;
+    private final DormRoomRepository roomRepository;
+    private final BedRepository bedRepository;
+    private final DormMapper dormMapper;
+
+    public DormResourceService(DormBuildingRepository buildingRepository, DormRoomRepository roomRepository, BedRepository bedRepository, DormMapper dormMapper) {
+        this.buildingRepository = buildingRepository;
+        this.roomRepository = roomRepository;
+        this.bedRepository = bedRepository;
+        this.dormMapper = dormMapper;
+    }
+
+    // --- Building Methods ---
+
+    public List<DormBuildingDto> getAllBuildings() {
+        return buildingRepository.findAll().stream().map(dormMapper::toDto).collect(Collectors.toList());
+    }
+
+    public DormBuildingDto createBuilding(BuildingCreateUpdateDto dto) {
+        DormBuilding building = new DormBuilding();
+        building.setName(dto.name());
+        return dormMapper.toDto(buildingRepository.save(building));
+    }
+
+    public DormBuildingDto updateBuilding(UUID id, BuildingCreateUpdateDto dto) {
+        DormBuilding building = buildingRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Building not found with id: " + id));
+        building.setName(dto.name());
+        return dormMapper.toDto(buildingRepository.save(building));
+    }
+
+    public void deleteBuilding(UUID id) {
+        if (roomRepository.existsByBuildingId(id)) {
+            throw new DataConflictException("Cannot delete building with id " + id + " because it contains rooms.");
+        }
+        buildingRepository.deleteById(id);
+    }
+
+    // --- Room Methods ---
+
+    public DormRoomDto createRoom(RoomCreateUpdateDto dto) {
+        DormBuilding building = buildingRepository.findById(dto.buildingId())
+                .orElseThrow(() -> new ResourceNotFoundException("Building not found with id: " + dto.buildingId()));
+        DormRoom room = new DormRoom();
+        room.setBuilding(building);
+        room.setRoomNumber(dto.roomNumber());
+        room.setCapacity(dto.capacity());
+        room.setGenderType(dto.genderType());
+        return dormMapper.toDto(roomRepository.save(room));
+    }
+
+    public DormRoomDto updateRoom(UUID roomId, RoomCreateUpdateDto dto) {
+        DormRoom room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new ResourceNotFoundException("Room not found with id: " + roomId));
+        DormBuilding building = buildingRepository.findById(dto.buildingId())
+                .orElseThrow(() -> new ResourceNotFoundException("Building not found with id: " + dto.buildingId()));
+
+        room.setBuilding(building);
+        room.setRoomNumber(dto.roomNumber());
+        room.setCapacity(dto.capacity());
+        room.setGenderType(dto.genderType());
+
+        return dormMapper.toDto(roomRepository.save(room));
+    }
+
+    public void deleteRoom(UUID roomId) {
+        if (bedRepository.existsByRoomId(roomId)) {
+            throw new DataConflictException("Cannot delete room with id " + roomId + " because it contains beds.");
+        }
+        roomRepository.deleteById(roomId);
+    }
+
+    // --- Bed Methods ---
+
+    public BedsCreatedResponseDto createBedsForRoom(UUID roomId, BedCreateRequestDto dto) {
+        DormRoom room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new ResourceNotFoundException("Room not found with id: " + roomId));
+
+        List<Bed> newBeds = new ArrayList<>();
+        for (int i = 1; i <= dto.bedCount(); i++) {
+            Bed bed = new Bed();
+            bed.setRoom(room);
+            bed.setBedNumber(i);
+            newBeds.add(bed);
+        }
+
+        List<Bed> savedBeds = bedRepository.saveAll(newBeds);
+        List<BedDto> bedDtos = savedBeds.stream().map(dormMapper::toDto).collect(Collectors.toList());
+
+        return new BedsCreatedResponseDto(savedBeds.size(), bedDtos);
+    }
+
+    public void deleteBed(UUID bedId) {
+        // Here you might add a check if the bed is assigned in matching_results table in later phases.
+        // For now, simple deletion is fine.
+        if (!bedRepository.existsById(bedId)) {
+            throw new ResourceNotFoundException("Bed not found with id: " + bedId);
+        }
+        bedRepository.deleteById(bedId);
+    }
+}
+----------
+.\src\main\resources\application.yml:
+server:
+  port: 8080 # 搴旂敤鐩戝惉鐨勭鍙?
+  servlet:
+    context-path: /api # 鎵€鏈堿PI鐨勬牴璺緞
+
+spring:
+  # --- Datasource Configuration ---
+  datasource:
+    url: jdbc:postgresql://localhost:5432/smart_dorm # 杩炴帴鏈湴Docker鏁版嵁搴撶殑URL
+    username: user       # 鏁版嵁搴撶敤鎴峰悕
+    password: password   # 鏁版嵁搴撳瘑鐮?
+    driver-class-name: org.postgresql.Driver
+
+  # --- JPA / Hibernate Configuration ---
+  jpa:
+    hibernate:
+      ddl-auto: update # 寮€鍙戞椂浣跨敤update锛屽簲鐢ㄥ惎鍔ㄦ椂浼氳嚜鍔ㄦ洿鏂拌〃缁撴瀯
+    show-sql: true     # 鍦ㄦ帶鍒跺彴鎵撳嵃鎵ц鐨凷QL璇彞锛屾柟渚胯皟璇?
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect # 鎸囧畾PostgreSQL鏂硅█
+        format_sql: true # 鏍煎紡鍖朣QL杈撳嚭
+
+# --- Custom Application Properties ---
+jwt:
+  secret: "a-very-strong-and-long-secret-key-for-smart-dorm-project-2024" # 鐢ㄤ簬绛惧彂JWT鐨勫瘑閽ワ紝鐢熶骇鐜搴斾娇鐢ㄧ幆澧冨彉閲?
+  expiration-ms: 86400000 # Token鏈夋晥鏈? 24灏忔椂 (24 * 60 * 60 * 1000)
+
+logging:
+  level:
+    org.springframework.security: DEBUG
+----------
+.\src\test\java\com\smartdorm\backend\controller\AuthControllerIntegrationTest.java:
+// src/test/java/com/smartdorm/backend/controller/AuthControllerIntegrationTest.java
+package com.smartdorm.backend.controller;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.smartdorm.backend.dto.LoginRequest;
+import com.smartdorm.backend.dto.LoginResponse;
+import com.smartdorm.backend.entity.User;
+import com.smartdorm.backend.repository.UserRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK) // 鍔犺浇瀹屾暣鐨凷pring搴旂敤涓婁笅鏂?
+@Testcontainers // 鍚敤Testcontainers
+@AutoConfigureMockMvc // 鑷姩閰嶇疆MockMvc浠ユā鎷烪TTP璇锋眰
+@DisplayName("闆嗘垚娴嬭瘯: AuthController 鍜屽畨鍏ㄦ祦绋?)
+class AuthControllerIntegrationTest {
+
+    // 澹版槑涓€涓狿ostgreSQL瀹瑰櫒锛屼娇鐢ㄤ笌docker-compose.yml涓浉鍚岀殑闀滃儚
+    @Container
+    private static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-alpine");
+
+    @Autowired
+    private MockMvc mockMvc; // 鐢ㄤ簬鎵цHTTP璇锋眰
+
+    @Autowired
+    private ObjectMapper objectMapper; // 鐢ㄤ簬搴忓垪鍖朖ava瀵硅薄涓篔SON瀛楃涓?
+
+    @Autowired
+    private UserRepository userRepository; // 鐢ㄤ簬鐩存帴鎿嶄綔鏁版嵁搴撲互鍑嗗娴嬭瘯鏁版嵁
+
+    @Autowired
+    private PasswordEncoder passwordEncoder; // 鐢ㄤ簬鍔犲瘑娴嬭瘯鐢ㄦ埛鐨勫瘑鐮?
+
+    // 鍔ㄦ€侀厤缃暟鎹簮锛屼娇鍏舵寚鍚戠敱Testcontainers鍚姩鐨勬暟鎹簱瀹炰緥
+    @DynamicPropertySource
+    static void configureProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", postgres::getJdbcUrl);
+        registry.add("spring.datasource.username", postgres::getUsername);
+        registry.add("spring.datasource.password", postgres::getPassword);
+        // 璁剧疆ddl-auto涓篶reate锛岀‘淇濅负姣忎釜娴嬭瘯绫昏繍琛屾椂閮藉垱寤轰竴涓共鍑€鐨勮〃缁撴瀯
+        registry.add("spring.jpa.hibernate.ddl-auto", () -> "create");
+    }
+
+    // 鍦ㄦ瘡涓祴璇曟柟娉曡繍琛屽墠锛屾竻鐞嗘暟鎹簱骞跺垱寤轰竴涓爣鍑嗘祴璇曠敤鎴?
+    @BeforeEach
+    void setUp() {
+        userRepository.deleteAll(); // 娓呯┖鏁版嵁锛屼繚璇佹祴璇曠嫭绔嬫€?
+        createTestUser("S001", "password123", "STUDENT", "John Doe");
+    }
+
+    // 杈呭姪鏂规硶锛岀敤浜庡湪鏁版嵁搴撲腑鍒涘缓娴嬭瘯鐢ㄦ埛
+    private void createTestUser(String studentId, String rawPassword, String role, String name) {
+        User user = new User();
+        user.setStudentId(studentId);
+        user.setName(name);
+        user.setPassword(passwordEncoder.encode(rawPassword)); // 瀵嗙爜蹇呴』鍔犲瘑瀛樺偍
+        user.setRole(role);
+        user.setGender("MALE");
+        user.setCollege("Test College");
+        userRepository.save(user);
+    }
+
+    @Test
+    @DisplayName("鎴愬姛鐧诲綍: 浣跨敤鏈夋晥鍑嵁搴旇繑鍥濲WT鍜岀敤鎴蜂俊鎭?)
+    void login_withValidCredentials_shouldReturnTokenAndUserDto() throws Exception {
+        LoginRequest loginRequest = new LoginRequest("S001", "password123");
+
+        mockMvc.perform(post("/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(loginRequest)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").isString())
+                .andExpect(jsonPath("$.token").isNotEmpty())
+                .andExpect(jsonPath("$.user.studentId").value("S001"))
+                .andExpect(jsonPath("$.user.name").value("John Doe"))
+                .andExpect(jsonPath("$.user.role").value("STUDENT"))
+                .andExpect(jsonPath("$.user.password").doesNotExist()); // 鍏抽敭鏂█: 纭繚瀵嗙爜瀛楁鏈湪鍝嶅簲涓繑鍥?
+    }
+
+    @Test
+    @DisplayName("鐧诲綍澶辫触: 瀵嗙爜閿欒搴旇繑鍥?01 Unauthorized")
+    void login_withInvalidPassword_shouldReturnUnauthorized() throws Exception {
+        LoginRequest loginRequest = new LoginRequest("S001", "wrongpassword");
+
+        mockMvc.perform(post("/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(loginRequest)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("Unauthorized"))
+                .andExpect(jsonPath("$.message").value("Invalid student ID or password"));
+    }
+
+    @Test
+    @DisplayName("鐧诲綍澶辫触: 鐢ㄦ埛涓嶅瓨鍦ㄥ簲杩斿洖401 Unauthorized")
+    void login_withNonExistentUser_shouldReturnUnauthorized() throws Exception {
+        LoginRequest loginRequest = new LoginRequest("S999", "password123");
+
+        mockMvc.perform(post("/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(loginRequest)))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("鍏紑绔偣璁块棶: /ping 搴旀棤闇€璁よ瘉鍗冲彲璁块棶")
+    void ping_publicEndpoint_shouldBeAccessible() throws Exception {
+        mockMvc.perform(get("/ping"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ok"));
+    }
+
+    @Test
+    @DisplayName("鍙椾繚鎶ょ鐐硅闂け璐? 鏃燭oken搴旇繑鍥?01 Unauthorized")
+    void accessSecuredEndpoint_withoutToken_shouldReturnUnauthorized() throws Exception {
+        mockMvc.perform(get("/users/me"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("鍙椾繚鎶ょ鐐硅闂垚鍔? 浣跨敤鏈夋晥Token搴旇繑鍥炵敤鎴蜂俊鎭?)
+    void accessSecuredEndpoint_withValidToken_shouldReturnOkAndUserData() throws Exception {
+        // 姝ラ 1: 鐧诲綍浠ヨ幏鍙栨湁鏁堢殑JWT
+        LoginRequest loginRequest = new LoginRequest("S001", "password123");
+        MvcResult result = mockMvc.perform(post("/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(loginRequest)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        // 浠庣櫥褰曞搷搴斾腑瑙ｆ瀽鍑簍oken
+        String responseBody = result.getResponse().getContentAsString();
+        LoginResponse loginResponse = objectMapper.readValue(responseBody, LoginResponse.class);
+        String token = loginResponse.token();
+        assertThat(token).isNotNull();
+
+        // 姝ラ 2: 浣跨敤鑾峰彇鍒扮殑token璁块棶鍙椾繚鎶ょ殑 /users/me 绔偣
+        mockMvc.perform(get("/users/me")
+                        .header("Authorization", "Bearer " + token)) // 鍦ㄨ姹傚ご涓檮甯oken
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.studentId").value("S001"))
+                .andExpect(jsonPath("$.name").value("John Doe"))
+                .andExpect(jsonPath("$.role").value("STUDENT"));
+    }
+}
+----------
+.\src\test\java\com\smartdorm\backend\controller\CycleControllerIntegrationTest.java:
+package com.smartdorm.backend.controller;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.smartdorm.backend.dto.CycleDtos.*;
+import com.smartdorm.backend.dto.LoginRequest;
+import com.smartdorm.backend.dto.LoginResponse;
+import com.smartdorm.backend.entity.MatchingCycle;
+import com.smartdorm.backend.entity.User;
+import com.smartdorm.backend.repository.MatchingCycleRepository;
+import com.smartdorm.backend.repository.UserRepository;
+import jakarta.transaction.Transactional;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+import java.util.List;
+import java.util.UUID;
+
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.is;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@SpringBootTest
+@Testcontainers
+@AutoConfigureMockMvc
+@DisplayName("闆嗘垚娴嬭瘯: CycleController")
+@Transactional
+class CycleControllerIntegrationTest {
+
+    @Container
+    private static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-alpine");
+
+    @Autowired private MockMvc mockMvc;
+    @Autowired private ObjectMapper objectMapper;
+    @Autowired private UserRepository userRepository;
+    @Autowired private MatchingCycleRepository cycleRepository;
+    @Autowired private PasswordEncoder passwordEncoder;
+
+    private String adminToken;
+
+    @DynamicPropertySource
+    static void configureProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", postgres::getJdbcUrl);
+        registry.add("spring.datasource.username", postgres::getUsername);
+        registry.add("spring.datasource.password", postgres::getPassword);
+        registry.add("spring.jpa.hibernate.ddl-auto", () -> "create");
+    }
+
+    @BeforeEach
+    void setUp() throws Exception {
+        userRepository.deleteAll();
+        cycleRepository.deleteAll();
+
+        User admin = new User();
+        admin.setStudentId("admin02");
+        admin.setName("Cycle Admin");
+        admin.setPassword(passwordEncoder.encode("cyclepass"));
+        admin.setRole("ADMIN");
+        admin.setGender("FEMALE");
+        admin.setCollege("Management");
+        userRepository.save(admin);
+
+        adminToken = getAdminToken("admin02", "cyclepass");
+    }
+
+    private String getAdminToken(String username, String password) throws Exception {
+        LoginRequest loginRequest = new LoginRequest(username, password);
+        MvcResult result = mockMvc.perform(post("/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(loginRequest)))
+                .andExpect(status().isOk())
+                .andReturn();
+        LoginResponse response = objectMapper.readValue(result.getResponse().getContentAsString(), LoginResponse.class);
+        return "Bearer " + response.token();
+    }
+
+    @Test
+    @DisplayName("Admin鍙互瀹屾暣鍦扮鐞嗕竴涓垎閰嶅懆鏈熷拰鍏堕棶鍗风淮搴?)
+    void adminCanManageFullLifecycleOfCycleAndDimensions() throws Exception {
+        // 1. Create a cycle
+        MatchingCycleCreateDto createDto = new MatchingCycleCreateDto("2024绉嬪鏂扮敓鍒嗛厤", null, null);
+        MvcResult cycleResult = mockMvc.perform(post("/admin/cycles")
+                        .header("Authorization", adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createDto)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.name", is("2024绉嬪鏂扮敓鍒嗛厤")))
+                .andExpect(jsonPath("$.status", is("DRAFT")))
+                .andReturn();
+        MatchingCycleDto createdCycle = objectMapper.readValue(cycleResult.getResponse().getContentAsString(), MatchingCycleDto.class);
+        UUID cycleId = createdCycle.id();
+
+        // 2. Add a dimension with options to the cycle
+        List<OptionCreateDto> options = List.of(
+                new OptionCreateDto("鏃╃潯鏃╄捣", 1.0),
+                new OptionCreateDto("鏅氱潯鏅氳捣", 5.0)
+        );
+        SurveyDimensionCreateDto dimensionDto = new SurveyDimensionCreateDto(
+                "rest_habit", "浣犵殑浣滄伅涔犳儻鏄紵", "SOFT_FACTOR", "SINGLE_CHOICE", 2.0, null, false, options);
+
+        mockMvc.perform(post("/admin/cycles/" + cycleId + "/dimensions")
+                        .header("Authorization", adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(dimensionDto)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.dimensionKey", is("rest_habit")))
+                .andExpect(jsonPath("$.options", hasSize(2)))
+                .andExpect(jsonPath("$.options[0].optionText", is("鏃╃潯鏃╄捣")));
+
+        // 3. Get dimensions for the cycle and verify
+        mockMvc.perform(get("/admin/cycles/" + cycleId + "/dimensions").header("Authorization", adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].prompt", is("浣犵殑浣滄伅涔犳儻鏄紵")));
+
+        // 4. Delete the cycle (should fail because status is not DRAFT)
+        // First, let's update status to OPEN
+        MatchingCycleUpdateDto updateStatusDto = new MatchingCycleUpdateDto(null, null, null, "OPEN");
+        mockMvc.perform(put("/admin/cycles/" + cycleId)
+                        .header("Authorization", adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(updateStatusDto)))
+                .andExpect(status().isOk());
+
+        // Now, try to delete it
+        mockMvc.perform(delete("/admin/cycles/" + cycleId).header("Authorization", adminToken))
+                .andExpect(status().isConflict());
+
+        // 5. Change status back to DRAFT and delete successfully
+        MatchingCycleUpdateDto revertStatusDto = new MatchingCycleUpdateDto(null, null, null, "DRAFT");
+        mockMvc.perform(put("/admin/cycles/" + cycleId)
+                        .header("Authorization", adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(revertStatusDto)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(delete("/admin/cycles/" + cycleId).header("Authorization", adminToken))
+                .andExpect(status().isNoContent());
+    }
+}
+----------
+.\src\test\java\com\smartdorm\backend\controller\DormResourceControllerIntegrationTest.java:
+package com.smartdorm.backend.controller;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.smartdorm.backend.dto.DormDtos.*;
+import com.smartdorm.backend.dto.LoginRequest;
+import com.smartdorm.backend.dto.LoginResponse;
+import com.smartdorm.backend.entity.DormBuilding;
+import com.smartdorm.backend.entity.DormRoom;
+import com.smartdorm.backend.entity.User;
+import com.smartdorm.backend.repository.DormBuildingRepository;
+import com.smartdorm.backend.repository.DormRoomRepository;
+import com.smartdorm.backend.repository.UserRepository;
+import jakarta.transaction.Transactional;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+import java.util.UUID;
+
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.is;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
+@Testcontainers
+@AutoConfigureMockMvc
+@DisplayName("闆嗘垚娴嬭瘯: DormResourceController")
+@Transactional // Roll back transactions after each test
+class DormResourceControllerIntegrationTest {
+
+    @Container
+    private static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-alpine");
+
+    @Autowired
+    private MockMvc mockMvc;
+    @Autowired
+    private ObjectMapper objectMapper;
+    @Autowired
+    private UserRepository userRepository;
+    @Autowired
+    private DormBuildingRepository buildingRepository;
+    @Autowired
+    private DormRoomRepository roomRepository;
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+    private String adminToken;
+
+    @DynamicPropertySource
+    static void configureProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", postgres::getJdbcUrl);
+        registry.add("spring.datasource.username", postgres::getUsername);
+        registry.add("spring.datasource.password", postgres::getPassword);
+        registry.add("spring.jpa.hibernate.ddl-auto", () -> "create");
+    }
+
+    @BeforeEach
+    void setUp() throws Exception {
+        userRepository.deleteAll();
+        buildingRepository.deleteAll();
+
+        // Create an admin user
+        User admin = new User();
+        admin.setStudentId("admin01");
+        admin.setName("Admin User");
+        admin.setPassword(passwordEncoder.encode("adminpass"));
+        admin.setRole("ADMIN");
+        admin.setGender("MALE");
+        admin.setCollege("Admin College");
+        userRepository.save(admin);
+
+        // Login as admin to get token
+        adminToken = getAdminToken("admin01", "adminpass");
+    }
+
+    private String getAdminToken(String username, String password) throws Exception {
+        LoginRequest loginRequest = new LoginRequest(username, password);
+        MvcResult result = mockMvc.perform(post("/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(loginRequest)))
+                .andExpect(status().isOk())
+                .andReturn();
+        LoginResponse response = objectMapper.readValue(result.getResponse().getContentAsString(), LoginResponse.class);
+        return "Bearer " + response.token();
+    }
+
+    @Test
+    @DisplayName("Admin鍙互鍒涘缓銆佽幏鍙栥€佹洿鏂板拰鍒犻櫎妤兼爧")
+    void adminCanManageBuildings() throws Exception {
+        // 1. Create Building
+        BuildingCreateUpdateDto createDto = new BuildingCreateUpdateDto("绱崋1鍙锋ゼ");
+        MvcResult createResult = mockMvc.perform(post("/admin/dorm-buildings")
+                        .header("Authorization", adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createDto)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.name", is("绱崋1鍙锋ゼ")))
+                .andReturn();
+        DormBuildingDto createdBuilding = objectMapper.readValue(createResult.getResponse().getContentAsString(), DormBuildingDto.class);
+        UUID buildingId = createdBuilding.id();
+
+        // 2. Get All Buildings
+        mockMvc.perform(get("/admin/dorm-buildings").header("Authorization", adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].name", is("绱崋1鍙锋ゼ")));
+
+        // 3. Update Building
+        BuildingCreateUpdateDto updateDto = new BuildingCreateUpdateDto("绱崋1鍙锋ゼ (鏂?");
+        mockMvc.perform(put("/admin/dorm-buildings/" + buildingId)
+                        .header("Authorization", adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(updateDto)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name", is("绱崋1鍙锋ゼ (鏂?")));
+
+        // 4. Delete Building
+        mockMvc.perform(delete("/admin/dorm-buildings/" + buildingId).header("Authorization", adminToken))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    @DisplayName("褰撴ゼ鏍嬩笅鏈夋埧闂存椂锛屽垹闄ゆゼ鏍嬪簲杩斿洖409 Conflict")
+    void deleteBuilding_withRooms_shouldReturnConflict() throws Exception {
+        DormBuilding building = new DormBuilding();
+        building.setName("娴嬭瘯妤?);
+        building = buildingRepository.save(building);
+
+        DormRoom room = new DormRoom();
+        room.setBuilding(building);
+        room.setRoomNumber("101");
+        room.setCapacity(4);
+        room.setGenderType("MALE");
+        roomRepository.save(room);
+
+        mockMvc.perform(delete("/admin/dorm-buildings/" + building.getId()).header("Authorization", adminToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message", is("Cannot delete building with id " + building.getId() + " because it contains rooms.")));
+    }
+
+    @Test
+    @DisplayName("Admin鍙互涓烘埧闂存壒閲忔坊鍔犲簥浣?)
+    void adminCanCreateBedsForRoom() throws Exception {
+        // Setup a building and a room
+        DormBuilding building = new DormBuilding();
+        building.setName("瀹胯垗妤糀");
+        building = buildingRepository.save(building);
+
+        RoomCreateUpdateDto roomDto = new RoomCreateUpdateDto(building.getId(), "201", 4, "FEMALE");
+        MvcResult roomResult = mockMvc.perform(post("/admin/dorm-rooms")
+                        .header("Authorization", adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(roomDto)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        DormRoomDto createdRoom = objectMapper.readValue(roomResult.getResponse().getContentAsString(), DormRoomDto.class);
+
+        // Create beds for the room
+        BedCreateRequestDto bedRequest = new BedCreateRequestDto(4);
+        mockMvc.perform(post("/admin/rooms/" + createdRoom.id() + "/beds")
+                        .header("Authorization", adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(bedRequest)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.count", is(4)))
+                .andExpect(jsonPath("$.beds", hasSize(4)))
+                .andExpect(jsonPath("$.beds[0].bedNumber", is(1)));
+    }
+
+    @Test
+    @DisplayName("闈濧dmin鐢ㄦ埛璁块棶瀹胯垗璧勬簮API搴旇繑鍥?03 Forbidden")
+    void nonAdminAccess_shouldReturnForbidden() throws Exception {
+        // Create a student user and get token
+        User student = new User();
+        student.setStudentId("student01");
+        student.setName("Student User");
+        student.setPassword(passwordEncoder.encode("studentpass"));
+        student.setRole("STUDENT");
+        student.setGender("FEMALE");
+        student.setCollege("Test College");
+        userRepository.save(student);
+        String studentToken = getAdminToken("student01", "studentpass");
+
+        mockMvc.perform(get("/admin/dorm-buildings").header("Authorization", studentToken))
+                .andExpect(status().isForbidden());
+    }
+}
+----------

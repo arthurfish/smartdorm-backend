@@ -1,0 +1,1077 @@
+## **智慧宿舍分配系统 - 项目开发文档**
+
+### **1. 项目概述**
+
+本项目旨在为高校设计并开发一个智慧宿舍分配系统。系统核心目标是替代传统的人工或随机分配方式，通过收集学生的多维度偏好信息（如作息、卫生习惯、性格等），利用可配置的匹配算法，为学生进行智能化的宿舍分配。
+
+根据项目快速迭代、单人开发的需求，本项目将采用**集中式智能分配**模型。其特点是流程线性、功能聚焦，取消了学生自主组队和从推荐列表中选择的环节，由管理员触发，系统直接生成最终分配结果。这确保了项目能在紧张的工期内快速开发并交付核心功能。
+
+---
+
+### **2. 顶层技术栈**
+
+| 类别 | 技术选型 | 理由 |
+| --- | --- | --- |
+| **整体架构** | **单体应用 (Monolith)** | 降低开发和部署复杂性，最大化单人开发效率，完全满足项目初期需求。 |
+| **后端** | **Spring Boot 3, Spring Web, Spring Security** | 行业主流，生态完善，社区支持强大，开发效率高。 |
+| **前端** | **React + JSDoc(类型) + TailwindCSS** | 开发者熟悉，生态成熟，UI组件丰富，开发效率高。 |
+| **数据库** | **PostgreSQL** | 功能强大、稳定可靠的开源关系型数据库。 |
+| **数据库交互** | **Spring Data JPA, Hibernate** | 简化数据库操作，实现ORM，提高开发效率。 |
+| **部署** | **Docker + Docker Compose** | 实现环境隔离和一键部署，简化服务器配置和应用发布流程。 |
+
+---
+
+### **3. 核心用例分析**
+
+### **3.1 管理员用例**
+
+| 用例编号 | 用例名称 | 核心流程 |
+| --- | --- | --- |
+| ADM-01 | **管理匹配周期** | 创建、查看、修改和启动新的宿舍分配周期（如“2024级新生分配”）。 |
+| ADM-02 | **设计分配问卷** | 在指定周期内，设计和配置问卷。支持定义**硬性筛选维度**（如宿舍氛围）、**可计算的软性匹配因子**（如作息、习惯）以及**复合维度**（如大五人格），并设置其权重和计分规则。 |
+| ADM-03 | **触发智能分配** | 在问卷填写截止后，发起“一键分配”指令，系统后台开始执行**多阶段匹配算法（包括硬性筛选、优化求解、冲突调整等）**。 |
+| ADM-04 | **查看分配结果** | 查看指定周期的完整宿舍分配清单，包括每个学生的宿舍信息和室友信息。 |
+| ADM-05 | **管理宿舍资源** | 增删改查楼栋、房间、床位等基础物理资源。 |
+| ADM-06 | **处理调宿申请** | 审批或驳回学生提交的调宿申请。 |
+| ADM-07 | **发布支持内容** | 创建、编辑和发布文章，用于心理健康指导或宿舍文化建设宣传。 |
+| **ADM-08** | **审核分配质量** | **（新增）在分配完成后，查看系统生成的分配质量报告，包括各项指标（如神经质均值）的达标情况，以决定是否需要手动微调。** |
+
+### **3.2 学生用例**
+
+| 用例编号 | 用例名称 | 核心流程 |
+| --- | --- | --- |
+| STU-01 | **用户登录** | 使用学号和密码登录系统。 |
+| STU-02 | **填写偏好问卷** | 在指定周期内，填写并提交个人多维度偏好问卷。 |
+| STU-03 | **查看最终结果** | 在管理员公布结果后，查看自己被分配到的最终宿舍信息及室友列表。 |
+| STU-04 | **提交反馈/申请** | 入住后，对分配结果提交满意度反馈或在遇到问题时提交调宿申请。 |
+| STU-05 | **浏览支持内容** | 查看系统发布的心理健康建议、宿舍文化活动等文章。 |
+
+---
+
+### **4. 数据建模**
+
+### **4.1 数据表结构 (DDL)**
+
+```sql
+-- 启用 pgcrypto 扩展以使用 gen_random_uuid()
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- 1. 用户核心表
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    student_id VARCHAR(50) UNIQUE NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    hashed_password VARCHAR(255) NOT NULL,
+    role VARCHAR(20) NOT NULL CHECK (role IN ('STUDENT', 'ADMIN')),
+    -- [已调整] 新增字段以支持算法的硬性筛选
+    gender VARCHAR(10) NOT NULL CHECK (gender IN ('MALE', 'FEMALE')),
+    college VARCHAR(100) NOT NULL,
+    is_special_needs BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 2. 匹配周期表
+CREATE TABLE matching_cycles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL,
+    start_date TIMESTAMPTZ,
+    end_date TIMESTAMPTZ,
+    status VARCHAR(20) NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'OPEN', 'PROCESSING', 'COMPLETED')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 3. 动态问卷维度表
+CREATE TABLE survey_dimensions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    cycle_id UUID NOT NULL REFERENCES matching_cycles(id) ON DELETE CASCADE,
+    dimension_key VARCHAR(100) NOT NULL,
+    prompt TEXT NOT NULL,
+    -- [已调整] 明确维度的用途
+    dimension_type VARCHAR(20) NOT NULL CHECK (dimension_type IN ('HARD_FILTER', 'SOFT_FACTOR')),
+    -- [已调整] 增加复合类型
+    response_type VARCHAR(20) NOT NULL CHECK (response_type IN ('SCALE', 'SINGLE_CHOICE', 'COMPOSITE')),
+    weight DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+    -- [已调整] 新增字段支持复合维度
+    parent_dimension_key VARCHAR(100),
+    -- [已调整] 新增字段支持反向计分
+    is_reverse_scored BOOLEAN NOT NULL DEFAULT FALSE,
+    UNIQUE(cycle_id, dimension_key)
+);
+
+-- 4. 维度选项表
+CREATE TABLE dimension_options (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    dimension_id UUID NOT NULL REFERENCES survey_dimensions(id) ON DELETE CASCADE,
+    option_text VARCHAR(255) NOT NULL,
+    option_value DOUBLE PRECISION NOT NULL
+);
+
+-- 5. 学生答案表
+CREATE TABLE user_responses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    dimension_id UUID NOT NULL REFERENCES survey_dimensions(id) ON DELETE CASCADE,
+    -- [已调整] 存储原始值，预处理在后端进行
+    raw_value DOUBLE PRECISION NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(user_id, dimension_id)
+);
+
+-- 6. 宿舍资源 - 楼栋
+CREATE TABLE dorm_buildings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(100) NOT NULL UNIQUE
+);
+
+-- 7. 宿舍资源 - 房间
+CREATE TABLE dorm_rooms (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    building_id UUID NOT NULL REFERENCES dorm_buildings(id) ON DELETE CASCADE,
+    room_number VARCHAR(20) NOT NULL,
+    capacity INT NOT NULL,
+    -- [已调整] 与 users 表的 gender 严格对应
+    gender_type VARCHAR(20) NOT NULL CHECK (gender_type IN ('MALE', 'FEMALE')),
+    UNIQUE(building_id, room_number)
+);
+
+-- 8. 宿舍资源 - 床位
+CREATE TABLE beds (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    room_id UUID NOT NULL REFERENCES dorm_rooms(id) ON DELETE CASCADE,
+    bed_number INT NOT NULL,
+    UNIQUE(room_id, bed_number)
+);
+
+-- 9. 最终匹配结果表
+CREATE TABLE matching_results (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    cycle_id UUID NOT NULL REFERENCES matching_cycles(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE UNIQUE,
+    bed_id UUID NOT NULL REFERENCES beds(id) ON DELETE CASCADE UNIQUE,
+    match_group_id UUID NOT NULL
+);
+
+-- 10. 入住后反馈表
+CREATE TABLE feedback (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    cycle_id UUID NOT NULL REFERENCES matching_cycles(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    is_anonymous BOOLEAN NOT NULL DEFAULT FALSE,
+    rating INT CHECK (rating >= 1 AND rating <= 5),
+    comment TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 11. 调宿申请表
+CREATE TABLE swap_requests (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    cycle_id UUID NOT NULL REFERENCES matching_cycles(id) ON DELETE CASCADE,
+    reason TEXT NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED')),
+    admin_comment TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 12. 自动化通知表
+CREATE TABLE notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    message TEXT NOT NULL,
+    link_url VARCHAR(255),
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 13. 内容发布表 (心理健康/宿舍文化)
+CREATE TABLE content_articles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title VARCHAR(255) NOT NULL,
+    content TEXT NOT NULL,
+    category VARCHAR(50) NOT NULL,
+    author_id UUID REFERENCES users(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+```
+
+---
+
+### **5. 核心流程建模**
+
+以下序列图展示了系统从开始到结束的完整核心流程，并已细化算法执行步骤。
+
+```mermaid
+sequenceDiagram
+    participant Admin as 管理员
+    participant Student as 学生
+    participant Frontend as 前端 (React)
+    participant Backend as 后端 (Spring Boot)
+    participant DB as 数据库 (PostgreSQL)
+
+    Note over Admin, Student: 阶段一：准备与数据采集
+    Admin->>Frontend: 1. 创建分配周期与问卷
+    Frontend->>Backend: POST /api/admin/cycles/...
+    Backend->>DB: INSERT into matching_cycles, survey_dimensions...
+
+    Student->>Frontend: 2. 登录并填写问卷
+    Frontend->>Backend: GET /api/student/survey
+    Backend->>DB: SELECT from survey_dimensions...
+    Frontend->>Student: 显示问卷
+    Student->>Frontend: 提交答案
+    Frontend->>Backend: POST /api/student/responses
+    Backend->>DB: INSERT/UPDATE user_responses
+
+    Note over Admin, Student: 阶段二：处理与结果发布
+    Admin->>Frontend: 3. 点击“一键分配”
+    Frontend->>Backend: POST /api/admin/cycles/{id}/trigger-assignment
+
+    Backend->>Backend: 4. 异步执行多阶段匹配算法
+    Note right of Backend: (a) 状态更新为 'PROCESSING'
+    Backend->>DB: (b) 读取学生答案、用户信息(含性别/学院)、床位数据
+    Note right of Backend: (c) **硬性筛选**: 按 '性别' -> '学院' -> '宿舍氛围' 对学生进行分组
+    Note right of Backend: (d) **向量化**: 对每个组内的学生，计算大五人格等复合维度，并构建8维特征向量
+    Note right of Backend: (e) **优化求解**: 对每个组运行遗传算法或匈牙利算法，生成初步宿舍分配方案
+    Note right of Backend: (f) **冲突检测与调整**: 检查是否存在“高神经质+低宜人”组合，若有则进行局部搜索或交换调整
+    Note right of Backend: (g) **结果检验**: 检查最终方案是否满足“神经质均值”等全局约束
+    Backend->>DB: (h) 将最终结果写入 matching_results
+    Note right of Backend: (i) 状态更新为 'COMPLETED'<br/>(j) 生成通知 (写入 notifications 表)
+
+    Student->>Frontend: 5. 查看分配结果与通知
+    Frontend->>Backend: GET /api/student/result & GET /api/student/notifications
+    Backend->>DB: SELECT from matching_results, notifications
+    DB-->>Backend: 返回结果与通知
+    Backend-->>Frontend: 返回结果与通知
+    Frontend-->>Student: 展示最终宿舍信息和新消息提醒
+
+```
+
+---
+
+### **6. 后端API接口规范 (OpenAPI 3.0)**
+
+以下API定义已根据数据模型和算法流程进行全面调整。
+
+```yaml
+openapi: 3.0.3
+info:
+  title: 智慧宿舍分配系统 API
+  version: 1.1.0
+  description: 本文档定义了智慧宿舍分配系统的后端API接口，覆盖了管理员和学生的所有核心功能，并提供了完整的CRUD操作。已兼容算法v1。
+
+servers:
+  - url: /api
+    description: API 根路径
+
+# ===============================================
+# Reusable Components (Schemas, Security)
+# ===============================================
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    # --- Generic Schemas ---
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "INVALID_CREDENTIALS"
+        message:
+          type: string
+          example: "用户名或密码错误"
+
+    # --- Auth Schemas ---
+    LoginRequest:
+      type: object
+      required: [studentId, password]
+      properties:
+        studentId:
+          type: string
+          example: "20240001"
+        password:
+          type: string
+          example: "password123"
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        user:
+          $ref: '#/components/schemas/User'
+
+    # --- Core Entity Schemas (已调整) ---
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "d290f1ee-6c54-4b01-90e6-d701748f0851"
+        studentId:
+          type: string
+          example: "20240001"
+        name:
+          type: string
+          example: "张三"
+        role:
+          type: string
+          enum: [STUDENT, ADMIN]
+        gender:
+          type: string
+          enum: [MALE, FEMALE]
+          example: "MALE"
+        college:
+          type: string
+          example: "计算机科学与技术学院"
+
+    MatchingCycle:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        startDate: { type: string, format: date-time }
+        endDate: { type: string, format: date-time }
+        status: { type: string, enum: [DRAFT, OPEN, PROCESSING, COMPLETED] }
+
+    DimensionOption:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        optionText: { type: string, example: "早睡早起 (11点前睡)" }
+        optionValue: { type: number, format: double, example: 1.0 }
+
+    SurveyDimension:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        dimensionKey: { type: string, example: "rest_habit" }
+        prompt: { type: string, example: "你的作息习惯是？" }
+        dimensionType:
+          type: string
+          enum: [HARD_FILTER, SOFT_FACTOR]
+          description: "HARD_FILTER用于分类, SOFT_FACTOR用于加权计算"
+        responseType:
+          type: string
+          enum: [SCALE, SINGLE_CHOICE, COMPOSITE]
+          description: "COMPOSITE用于大五人格等由多个子问题构成的维度"
+        weight: { type: number, format: double, example: 1.5 }
+        parentDimensionKey:
+          type: string
+          nullable: true
+          description: "用于将子问题关联到复合维度 (e.g., 'neuroticism')"
+        isReverseScored:
+          type: boolean
+          default: false
+          description: "标记此问题是否需要反向计分"
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/DimensionOption'
+
+    DormBuilding:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, example: "紫荆1号楼" }
+
+    DormRoom:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        buildingId: { type: string, format: uuid }
+        roomNumber: { type: string, example: "301" }
+        capacity: { type: integer, example: 4 }
+        genderType: { type: string, enum: [MALE, FEMALE] }
+
+    Bed:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        roomId: { type: string, format: uuid }
+        bedNumber: { type: integer, example: 1 }
+
+    Article:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string, example: "宿舍冲突解决指南" }
+        content: { type: string, example: "第一步，保持冷静..." }
+        category: { type: string, example: "心理健康" }
+        authorId: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+
+    Notification:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        message: { type: string, example: "您的宿舍分配结果已公布！" }
+        linkUrl: { type: string, nullable: true, example: "/student/result" }
+        isRead: { type: boolean, default: false }
+        createdAt: { type: string, format: date-time }
+
+    SwapRequest:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        cycleId: { type: string, format: uuid }
+        reason: { type: string }
+        status: { type: string, enum: [PENDING, APPROVED, REJECTED] }
+        adminComment: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    # --- Request Body Schemas for Create/Update (已调整) ---
+    MatchingCycleCreate:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, example: "2024级新生秋季分配" }
+        startDate: { type: string, format: date-time }
+        endDate: { type: string, format: date-time }
+
+    MatchingCycleUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        startDate: { type: string, format: date-time }
+        endDate: { type: string, format: date-time }
+        status: { type: string, enum: [DRAFT, OPEN, COMPLETED] }
+
+    SurveyDimensionCreate:
+      type: object
+      required: [dimensionKey, prompt, dimensionType, responseType, weight]
+      properties:
+        dimensionKey: { type: string, example: "cleanliness" }
+        prompt: { type: string, example: "你对宿舍的整洁度要求是？" }
+        dimensionType: { type: string, enum: [HARD_FILTER, SOFT_FACTOR] }
+        responseType: { type: string, enum: [SCALE, SINGLE_CHOICE, COMPOSITE] }
+        weight: { type: number, format: double, example: 2.0 }
+        parentDimensionKey: { type: string, nullable: true }
+        isReverseScored: { type: boolean, default: false }
+        options:
+          type: array
+          items:
+            type: object
+            required: [optionText, optionValue]
+            properties:
+              optionText: { type: string, example: "非常整洁" }
+              optionValue: { type: number, format: double, example: 5.0 }
+
+    SurveyDimensionUpdate:
+      type: object
+      properties:
+        prompt: { type: string }
+        weight: { type: number, format: double }
+
+    UserResponseSubmit:
+      type: object
+      properties:
+        responses:
+          type: array
+          items:
+            type: object
+            required: [dimensionId, rawValue]
+            properties:
+              dimensionId: { type: string, format: uuid }
+              rawValue: { type: number, format: double, description: "学生选择的原始分值，如1-5分" }
+
+    FeedbackCreate:
+      type: object
+      required: [rating]
+      properties:
+        isAnonymous: { type: boolean, default: false }
+        rating: { type: integer, minimum: 1, maximum: 5, example: 5 }
+        comment: { type: string, nullable: true, example: "室友们都很好！" }
+
+    SwapRequestCreate:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, example: "与室友作息差异过大。" }
+
+    SwapRequestUpdate:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [APPROVED, REJECTED] }
+        adminComment: { type: string, nullable: true, example: "已与辅导员沟通。" }
+
+    ArticleUpdate:
+      type: object
+      properties:
+        title: { type: string }
+        content: { type: string }
+        category: { type: string }
+
+    # --- Response Body Schemas (已调整/新增) ---
+    AssignmentResultAdmin:
+      type: object
+      properties:
+        user: { $ref: '#/components/schemas/User' }
+        building: { type: string, example: "紫荆1号楼" }
+        room: { type: string, example: "301" }
+        bed: { type: integer, example: 1 }
+
+    AssignmentResultStudent:
+      type: object
+      properties:
+        assignment:
+          type: object
+          properties:
+            building: { type: string, example: "紫荆1号楼" }
+            room: { type: string, example: "301" }
+            bed: { type: integer, example: 1 }
+        roommates:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string, example: "李四" }
+              studentId: { type: string, example: "20240002" }
+
+    AdminAssignmentValidation:
+      type: object
+      properties:
+        isValid: { type: boolean }
+        message: { type: string, example: "结果符合所有检验标准。" }
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              dorm: { type: string, example: "紫荆1号楼-301" }
+              metric: { type: string, example: "神经质均值" }
+              value: { type: number, example: 0.55 }
+              isCompliant: { type: boolean, example: true }
+
+security:
+  - BearerAuth: []
+
+# ===============================================
+# API Endpoints
+# ===============================================
+paths:
+  # --- 1. Auth Module ---
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: 用户登录
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+        '401':
+          description: 凭证无效
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  # --- 2. Admin - Cycles & Dimensions Module ---
+  /admin/cycles:
+    get:
+      tags: [Admin - Cycles]
+      summary: 获取所有匹配周期
+      responses:
+        '200':
+          description: 成功获取周期列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/MatchingCycle' }
+    post:
+      tags: [Admin - Cycles]
+      summary: 创建一个新的匹配周期
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MatchingCycleCreate' }
+      responses:
+        '201':
+          description: 周期创建成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MatchingCycle' }
+
+  /admin/cycles/{cycleId}:
+    parameters: [{ name: cycleId, in: path, required: true, schema: { type: string, format: uuid } }]
+    get:
+      tags: [Admin - Cycles]
+      summary: 获取单个匹配周期的详细信息
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MatchingCycle' }
+    put:
+      tags: [Admin - Cycles]
+      summary: 更新一个匹配周期
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MatchingCycleUpdate' }
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MatchingCycle' }
+    delete:
+      tags: [Admin - Cycles]
+      summary: 删除一个匹配周期
+      description: 只能删除处于 'DRAFT' 状态的周期。
+      responses:
+        '204': { description: 删除成功 }
+        '409': { description: 周期不处于可删除状态, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/cycles/{cycleId}/dimensions:
+    parameters: [{ name: cycleId, in: path, required: true, schema: { type: string, format: uuid } }]
+    get:
+      tags: [Admin - Dimensions]
+      summary: 获取指定周期的所有问卷维度
+      responses:
+        '200':
+          description: 成功获取维度列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SurveyDimension' }
+    post:
+      tags: [Admin - Dimensions]
+      summary: 为周期添加新的问卷维度
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SurveyDimensionCreate' }
+      responses:
+        '201':
+          description: 维度创建成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SurveyDimension' }
+
+  /admin/cycles/{cycleId}/dimensions/{dimensionId}:
+    parameters:
+      - { name: cycleId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: dimensionId, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      tags: [Admin - Dimensions]
+      summary: 更新一个问卷维度
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SurveyDimensionUpdate' }
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SurveyDimension' }
+    delete:
+      tags: [Admin - Dimensions]
+      summary: 删除一个问卷维度
+      responses:
+        '204': { description: 删除成功 }
+
+  # --- 3. Admin - Assignment & Results Module ---
+  /admin/cycles/{cycleId}/trigger-assignment:
+    parameters: [{ name: cycleId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post:
+      tags: [Admin - Assignment]
+      summary: 触发智能分配流程 (异步)
+      responses:
+        '202':
+          description: 服务器已接收请求，正在后台处理
+          content:
+            application/json:
+              schema: { type: object, properties: { message: { type: string, example: "Assignment process started." } } }
+  /admin/cycles/{cycleId}/results:
+    parameters: [{ name: cycleId, in: path, required: true, schema: { type: string, format: uuid } }]
+    get:
+      tags: [Admin - Assignment]
+      summary: 查看最终分配结果
+      responses:
+        '200':
+          description: 成功获取分配结果
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AssignmentResultAdmin' }
+  /admin/cycles/{cycleId}/validate-results:
+    parameters: [{ name: cycleId, in: path, required: true, schema: { type: string, format: uuid } }]
+    get:
+      tags: [Admin - Assignment]
+      summary: 检验分配结果是否符合预设标准
+      description: 在分配完成后，运行算法文档中定义的检验标准（如神经质均值等），返回检验报告。
+      responses:
+        '200':
+          description: 检验报告
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminAssignmentValidation' }
+        '404':
+          description: 指定周期的结果不存在
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  # --- 4. Admin - Resource Management Module ---
+  /admin/dorm-buildings:
+    get:
+      tags: [Admin - Dorm Resources]
+      summary: 获取所有楼栋信息
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/DormBuilding' }
+    post:
+      tags: [Admin - Dorm Resources]
+      summary: 新建楼栋
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, required: [name], properties: { name: { type: string } } }
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DormBuilding' }
+
+  /admin/dorm-buildings/{buildingId}:
+    parameters: [{ name: buildingId, in: path, required: true, schema: { type: string, format: uuid } }]
+    put:
+      tags: [Admin - Dorm Resources]
+      summary: 更新楼栋信息
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { name: { type: string } } }
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DormBuilding' }
+    delete:
+      tags: [Admin - Dorm Resources]
+      summary: 删除楼栋
+      description: 只有当楼栋下没有任何房间时才可删除。
+      responses:
+        '204': { description: 删除成功 }
+        '409': { description: 楼栋下存在房间，无法删除, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/dorm-rooms:
+    post:
+      tags: [Admin - Dorm Resources]
+      summary: 新建房间
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DormRoom' }
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DormRoom' }
+
+  /admin/dorm-rooms/{roomId}:
+    parameters: [{ name: roomId, in: path, required: true, schema: { type: string, format: uuid } }]
+    put:
+      tags: [Admin - Dorm Resources]
+      summary: 更新房间信息
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DormRoom' }
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DormRoom' }
+    delete:
+      tags: [Admin - Dorm Resources]
+      summary: 删除房间
+      description: 只有当房间内没有任何床位或未被分配时才可删除。
+      responses:
+        '204': { description: 删除成功 }
+        '409': { description: 房间内存在床位或已被分配, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/rooms/{roomId}/beds:
+    parameters: [{ name: roomId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post:
+      tags: [Admin - Dorm Resources]
+      summary: 为房间批量或单个添加床位
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { bedCount: { type: integer, example: 4 } } }
+      responses:
+        '201': { description: 床位创建成功 }
+
+  /admin/beds/{bedId}:
+    parameters: [{ name: bedId, in: path, required: true, schema: { type: string, format: uuid } }]
+    delete:
+      tags: [Admin - Dorm Resources]
+      summary: 删除单个床位
+      description: 只有当床位未被分配时才可删除。
+      responses:
+        '204': { description: 删除成功 }
+        '409': { description: 床位已被分配, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  # --- 5. Admin - Support & Content Module ---
+  /admin/swap-requests:
+    get:
+      tags: [Admin - Support]
+      summary: 获取所有调宿申请列表
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SwapRequest' }
+
+  /admin/swap-requests/{requestId}/process:
+    parameters: [{ name: requestId, in: path, required: true, schema: { type: string, format: uuid } }]
+    put:
+      tags: [Admin - Support]
+      summary: 审批或驳回调宿申请
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SwapRequestUpdate' }
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SwapRequest' }
+
+  /admin/articles:
+    get:
+      tags: [Admin - Content]
+      summary: 获取所有文章列表
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Article' }
+    post:
+      tags: [Admin - Content]
+      summary: 发布新文章
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, content, category]
+              properties:
+                title: { type: string }
+                content: { type: string }
+                category: { type: string }
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Article' }
+
+  /admin/articles/{articleId}:
+    parameters: [{ name: articleId, in: path, required: true, schema: { type: string, format: uuid } }]
+    get:
+      tags: [Admin - Content]
+      summary: 获取单篇文章详情
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Article' }
+    put:
+      tags: [Admin - Content]
+      summary: 更新文章
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ArticleUpdate' }
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Article' }
+    delete:
+      tags: [Admin - Content]
+      summary: 删除文章
+      responses:
+        '204': { description: 删除成功 }
+
+  # --- 6. Student Module ---
+  /student/survey:
+    get:
+      tags: [Student - Survey]
+      summary: 获取当前需要填写的问卷
+      responses:
+        '200':
+          description: 成功获取问卷
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cycleId: { type: string, format: uuid }
+                  dimensions:
+                    type: array
+                    items: { $ref: '#/components/schemas/SurveyDimension' }
+        '404':
+          description: 当前没有开放的问卷
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /student/responses:
+    post:
+      tags: [Student - Survey]
+      summary: 提交或更新问卷答案
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserResponseSubmit' }
+      responses:
+        '200': { description: 答案已保存 }
+
+  /student/result:
+    get:
+      tags: [Student - Assignment]
+      summary: 查看自己的最终分配结果
+      responses:
+        '200':
+          description: 成功获取个人分配结果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AssignmentResultStudent' }
+        '404':
+          description: 结果尚未公布或无分配记录
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /student/feedback:
+    post:
+      tags: [Student - Support]
+      summary: 提交入住后反馈
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FeedbackCreate' }
+      responses:
+        '201': { description: 反馈提交成功 }
+
+  /student/swap-requests:
+    post:
+      tags: [Student - Support]
+      summary: 提交调宿申请
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SwapRequestCreate' }
+      responses:
+        '201': { description: 申请提交成功 }
+
+  /student/notifications:
+    get:
+      tags: [Student - Content]
+      summary: 获取个人通知列表
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Notification' }
+
+  /student/notifications/{notificationId}/read:
+    parameters: [{ name: notificationId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post:
+      tags: [Student - Content]
+      summary: 将通知标记为已读
+      responses:
+        '204': { description: 操作成功 }
+
+  /student/articles:
+    get:
+      tags: [Student - Content]
+      summary: 获取对学生可见的文章列表
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema: { type: string }
+          description: 按分类筛选文章 (如 '心理健康', '宿舍文化')
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Article' }
+
+  /student/articles/{articleId}:
+    parameters: [{ name: articleId, in: path, required: true, schema: { type: string, format: uuid } }]
+    get:
+      tags: [Student - Content]
+      summary: 获取单篇文章详情
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Article' }
+        '404':
+          description: 文章未找到
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+```

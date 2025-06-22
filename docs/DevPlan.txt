@@ -1,0 +1,196 @@
+好的，收到您的需求。目标非常明确：**在一天内，利用AI编码能力，完成智慧宿舍分配系统后端所有核心CRUD功能的开发和上线**。
+
+为了实现这个极具挑战性的目标，我将为您设计一个高度优化的、分阶段的、对AI执行极其友好的开发方案。该方案的核心思想是：
+
+1. **绝对的CRUD优先**：我们将暂时搁置复杂的异步匹配算法逻辑，用一个“占位符”（Placeholder）来模拟其流程，确保整个系统的API链路是通的。
+2. **依赖驱动的顺序**：开发顺序将严格按照功能依赖关系进行，先构建基础，再构建依赖于基础的上层功能。
+3. **原子化任务**：每个步骤都是一个独立的、可验证的模块。完成一步，就可以立即通过API工具（如Postman）进行测试，获得即时反馈。
+4. **AI友好指令**：整个方案将以清晰、明确的指令形式呈现，便于我（AI）直接理解并生成对应的代码。
+
+---
+
+## **“一日冲刺”后端开发方案**
+
+### **战略总览**
+
+我们将整个开发过程分为**6个核心阶段**。每个阶段聚焦于一组关联性极强的API，从最基础的环境搭建和用户认证开始，逐步扩展到宿舍资源、问卷管理、学生交互，最后完成支持性功能的框架。
+
+| 阶段 | 核心任务 | 预计耗时 (AI编码) | 可验证性 | 关键产出 |
+| --- | --- | --- | --- | --- |
+| **P0** | **项目初始化与环境配置** | 30分钟 | 应用程序成功启动，数据库连接正常 | 可运行的Spring Boot项目骨架, Docker Compose环境 |
+| **P1** | **用户与认证 (Auth)** | 1.5小时 | 用户可登录，受保护接口返回401/403，带Token可访问 | `User`实体, JWT安全配置, `/auth/login` |
+| **P2** | **宿舍资源管理 (Dorm Resources)** | 1.5小时 | 管理员可增删改查楼栋、房间、床位 | `DormBuilding`, `DormRoom`, `Bed` 相关的全套CRUD API |
+| **P3** | **匹配周期与问卷管理 (Cycles & Dimensions)** | 2小时 | 管理员可创建分配周期，并为其设计问卷维度和选项 | `MatchingCycle`, `SurveyDimension` 相关的全套CRUD API |
+| **P4** | **学生核心流程 (Survey & Results)** | 1.5小时 | 学生可获取问卷、提交答案、查看（模拟的）结果 | `UserResponse` 实体, 学生端问卷API, 结果查看API |
+| **P5** | **支持性功能 (Support & Content)** | 1小时 | 所有剩余的CRUD接口（如申请、文章、反馈）功能可用 | `SwapRequest`, `Article`, `Feedback` 等相关的全套CRUD API |
+| **P6** | **部署与最终验证** | 30分钟 | 应用打包成Docker镜像并通过Docker Compose成功运行 | `Dockerfile` 和完善的 `docker-compose.yml` |
+| **总计** | --- | **~8 小时** | --- | --- |
+
+---
+
+### **AI执行的具体步骤 (Step-by-Step Execution Plan)**
+
+我将按照以下步骤为你执行编码工作。
+
+### **阶段 0: 项目初始化与环境配置 (P0)**
+
+1. **生成Spring Boot项目**:
+    - 使用 Spring Initializr 创建一个新项目。
+    - **依赖**: `Spring Web`, `Spring Data JPA`, `PostgreSQL Driver`, `Spring Security`, `Lombok`, `Validation`, `Java JWT` (for auth0).
+2. **配置 `application.yml`**:
+    - 设置数据库连接信息 (URL, username, password)，指向即将由Docker Compose启动的PostgreSQL服务。
+    - 配置JPA，如 `ddl-auto: update` (便于开发初期快速迭代) 和 `show-sql: true`。
+    - 配置JWT密钥 (`jwt.secret`) 和过期时间。
+3. **创建 `docker-compose.yml`**:
+    - 定义一个 `postgres` 服务，使用官方镜像，映射端口 `5432:5432`，并设置持久化卷和数据库凭据。
+    - 定义一个 `app` 服务（暂时不完整，后续补充Dockerfile）。
+4. **初始化数据库**:
+    - 启动 `docker-compose up -d postgres`。
+    - 连接到数据库，执行你提供的DDL脚本，创建所有表和扩展。
+5. **建立包结构**:
+    - 创建 `com.smartdorm.backend` 根包。
+    - 在其下创建 `config`, `controller`, `dto`, `entity`, `repository`, `service`, `security`, `exception` 等标准包。
+
+**【可验证】**: 此时，我可以启动Spring Boot应用，它应该能无错误地连接到PostgreSQL数据库。
+
+---
+
+### **阶段 1: 用户与认证 (P1)**
+
+1. **创建JPA实体**:
+    - 根据DDL，在 `entity` 包中创建 `User` 实体，使用 `@Entity`, `@Table`, `@Id` 等注解。使用Lombok简化代码。
+2. **创建JPA Repository**:
+    - 在 `repository` 包中创建 `UserRepository` 接口，继承 `JpaRepository<User, UUID>`。添加 `findByStudentId(String studentId)` 方法。
+3. **实现Spring Security**:
+    - 在 `security` 包中创建 `JwtUtil` 用于生成和验证Token。
+    - 创建 `UserDetailsServiceImpl` 实现 `UserDetailsService`，重写 `loadUserByUsername` 方法（通过学号加载用户）。
+    - 创建 `JwtRequestFilter` 继承 `OncePerRequestFilter`，用于解析JWT并设置安全上下文。
+    - 创建 `SecurityConfig`，配置 `PasswordEncoder` (BCrypt)，定义HTTP安全规则（如 `/api/auth/login` 允许匿名访问，其他 `/api/**` 需要认证），并将 `JwtRequestFilter` 添加到过滤器链中。
+4. **创建DTOs**:
+    - 在 `dto` 包中创建 `LoginRequest`, `LoginResponse` 等记录(Record)或类。
+5. **创建Controller和Service**:
+    - 在 `service` 包中创建 `AuthService`，处理登录逻辑。
+    - 在 `controller` 包中创建 `AuthController`，实现 `POST /api/auth/login` 端点。
+
+**【可验证】**:
+
+- 手动在数据库中插入一条已哈希密码的ADMIN用户记录。
+- 使用Postman访问 `/api/admin/cycles`（此时尚未实现，但会因未认证而返回401）。
+- 调用 `POST /api/auth/login`，使用正确的凭据，应返回200和JWT。
+- 携带此JWT再次访问 `/api/admin/cycles`，应返回403（因为需要ADMIN角色）或404（因为接口未实现），但不再是401。
+
+---
+
+### **阶段 2: 宿舍资源管理 (P2)**
+
+1. **创建JPA实体**:
+    - 在 `entity` 包中创建 `DormBuilding`, `DormRoom`, `Bed`。正确配置 `@ManyToOne`, `@OneToMany` 等关系。
+2. **创建JPA Repositories**:
+    - 创建 `DormBuildingRepository`, `DormRoomRepository`, `BedRepository`。
+3. **创建DTOs**:
+    - 根据API规范创建对应的DTO，如 `DormBuildingDto`, `DormRoomDto` 等。我会使用MapStruct或手动转换来处理Entity和DTO的映射。
+4. **创建Service和Controller**:
+    - 创建 `DormResourceService`，封装所有宿舍资源的CRUD逻辑（如，删除楼栋前检查是否有房间）。
+    - 创建 `DormResourceController`，实现 `/api/admin/dorm-buildings`, `/api/admin/dorm-rooms`, `/api/admin/beds` 等所有相关端点。使用 `@PreAuthorize("hasRole('ADMIN')")` 保护接口。
+
+**【可验证】**:
+
+- 使用阶段1获取的Admin Token。
+- 通过API `POST /api/admin/dorm-buildings` 创建一个楼栋。
+- `GET` 验证楼栋已创建。
+- 使用返回的`buildingId`，`POST /api/admin/dorm-rooms` 创建一个房间。
+- 对所有相关实体完成增、删、改、查的完整测试。
+
+---
+
+### **阶段 3: 匹配周期与问卷管理 (P3)**
+
+1. **创建JPA实体**:
+    - `MatchingCycle`, `SurveyDimension`, `DimensionOption`。注意 `SurveyDimension` 和 `DimensionOption` 之间的 `@OneToMany` 关系，并设置 `cascade = CascadeType.ALL` 和 `orphanRemoval = true` 以简化管理。
+2. **创建JPA Repositories**:
+    - `MatchingCycleRepository`, `SurveyDimensionRepository`。`DimensionOption` 通常通过 `SurveyDimension` 级联操作，可能不需要独立的Repository。
+3. **创建DTOs**:
+    - `MatchingCycleDto`, `SurveyDimensionCreateDto`, `SurveyDimensionDto` 等。`SurveyDimensionDto` 会内嵌一个 `DimensionOptionDto` 的列表。
+4. **创建Service和Controller**:
+    - 创建 `CycleService` 和 `DimensionService`（或一个统一的 `CycleManagementService`）。
+    - 创建 `CycleController` 和 `DimensionController`，实现 `/api/admin/cycles/**` 和 `/api/admin/cycles/{cycleId}/dimensions/**` 的所有端点。
+
+**【可验证】**:
+
+- 使用Admin Token。
+- `POST /api/admin/cycles` 创建一个新周期。
+- `GET /api/admin/cycles/{cycleId}` 验证。
+- `POST /api/admin/cycles/{cycleId}/dimensions` 为该周期创建一个包含多个选项的问卷维度。
+- `GET /api/admin/cycles/{cycleId}/dimensions` 验证维度和选项都已正确创建。
+- 测试更新和删除操作。
+
+---
+
+### **阶段 4: 学生核心流程 (P4)**
+
+1. **创建JPA实体**:
+    - `UserResponse`, `MatchingResult`。
+2. **创建JPA Repositories**:
+    - `UserResponseRepository`, `MatchingResultRepository`。
+3. **创建DTOs**:
+    - `UserResponseSubmitDto`, `AssignmentResultStudentDto` 等。
+4. **创建Service和Controller**:
+    - 创建 `StudentSurveyService`，逻辑包括：
+        - `GET /api/student/survey`: 查找当前状态为 'OPEN' 的周期及其所有维度。
+        - `POST /api/student/responses`: 为当前登录的学生批量保存或更新答案。
+    - 创建 `StudentController` 实现上述接口。
+    - **【关键简化】**: 在 `AdminController` 中实现 `POST /api/admin/cycles/{cycleId}/trigger-assignment`。**此版本中，该接口仅将周期状态从 `OPEN` 修改为 `COMPLETED`，并返回202 Accepted。它不执行任何实际的匹配算法。**
+    - 实现学生和管理员查看结果的API (`/student/result`, `/admin/cycles/{cycleId}/results`)。目前它们将返回空数据或手动插入数据库的测试数据。
+
+**【可验证】**:
+
+- 管理员将某个周期状态更新为 `OPEN`。
+- 使用学生账户登录，获取Token。
+- `GET /api/student/survey` 能否拉取到问卷？
+- `POST /api/student/responses` 提交答案。
+- 管理员调用 `trigger-assignment`，周期状态变为 `COMPLETED`。
+- 学生调用 `GET /api/student/result`，应收到404或空数据，表示流程通畅。
+
+---
+
+### **阶段 5: 支持性功能 (P5)**
+
+这是一个快速的“扫尾”阶段，因为大部分功能都是纯粹的CRUD。
+
+1. **创建实体、Repository、DTO、Service、Controller**:
+    - 为 `Feedback` 实体实现 `POST /student/feedback`。
+    - 为 `SwapRequest` 实体实现学生端的 `POST` 和管理员端的 `GET`、`PUT`。
+    - 为 `ContentArticle` 实体实现管理员的全套CRUD和学生端的 `GET` 列表/详情。
+    - 为 `Notification` 实体实现学生端的 `GET`、`POST /read`。
+
+**【可验证】**:
+
+- 使用学生和管理员Token，逐一测试OpenAPI规范中所有剩余的CRUD接口，确保它们按预期工作。
+
+---
+
+### **阶段 6: 部署与最终验证 (P6)**
+
+1. **创建 `Dockerfile`**:
+    - 使用多阶段构建（multi-stage build）。
+    - 第一阶段：使用 `maven:3.8-openjdk-17` 镜像构建项目，生成 `.jar` 文件。
+    - 第二阶段：使用 `eclipse-temurin:17-jre-jammy` 这种更小的基础镜像，将第一阶段的 `.jar` 文件复制过来。
+    - 设置 `ENTRYPOINT` 来运行java应用。
+2. **完善 `docker-compose.yml`**:
+    - 为 `app` 服务添加 `build: .` 指令，使其使用项目根目录的 `Dockerfile` 构建镜像。
+    - 设置 `depends_on: - postgres`，确保数据库先启动。
+    - 将 `application.yml` 中的数据库主机名改为 `postgres`（Docker Compose内部网络的服务名）。
+    - 配置端口映射 `8080:8080`。
+3. **执行部署**:
+    - 在项目根目录运行 `docker-compose up --build -d`。
+
+**【可验证】**:
+
+- 两个容器（app, postgres）都成功运行。
+- 可以通过 `http://localhost:8080/api/...` 访问所有API端点，并得到与本地开发时一致的响应。
+
+### **结论**
+
+此方案通过**严格的功能降级（搁置算法）、清晰的阶段划分和原子化的任务设计**，将一个看似庞大的项目分解为一天内可以完成的、一系列对AI编码器友好的指令。每一步都有明确的产出和验证方法，确保了开发过程的稳健和高效。
+
+**现在，请授权我开始执行第一阶段（P0）的任务。**
