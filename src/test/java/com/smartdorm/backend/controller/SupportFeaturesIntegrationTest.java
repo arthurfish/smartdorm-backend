@@ -93,7 +93,7 @@ public class SupportFeaturesIntegrationTest {
     void testFeedbackAndSwapRequestFlow() throws Exception {
         // 1. Student submits feedback
         FeedbackCreateDto feedbackDto = new FeedbackCreateDto(false, 5, "Great experience!");
-        mockMvc.perform(post("/student/feedback")
+        mockMvc.perform(post("/api/student/feedback")
                         .header("Authorization", studentToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(feedbackDto)))
@@ -101,14 +101,14 @@ public class SupportFeaturesIntegrationTest {
 
         // 2. Student submits a swap request
         SwapRequestCreateDto swapDto = new SwapRequestCreateDto("Circumstantial reasons.");
-        mockMvc.perform(post("/student/swap-requests")
+        mockMvc.perform(post("/api/student/swap-requests")
                         .header("Authorization", studentToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(swapDto)))
                 .andExpect(status().isCreated());
 
         // 3. Admin gets the list of swap requests
-        MvcResult getResult = mockMvc.perform(get("/admin/swap-requests")
+        MvcResult getResult = mockMvc.perform(get("/api/admin/swap-requests")
                         .header("Authorization", adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)))
@@ -121,7 +121,7 @@ public class SupportFeaturesIntegrationTest {
 
         // 4. Admin processes (approves) the swap request
         SwapRequestUpdateDto updateDto = new SwapRequestUpdateDto("APPROVED", "Approved after review.");
-        mockMvc.perform(put("/admin/swap-requests/" + requestId + "/process")
+        mockMvc.perform(put("/api/admin/swap-requests/" + requestId + "/process")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(updateDto)))
@@ -135,7 +135,7 @@ public class SupportFeaturesIntegrationTest {
     void testArticleManagementFlow() throws Exception {
         // 1. Admin creates an article
         ArticleCreateDto createDto = new ArticleCreateDto("指南", "宿舍生活指南", "生活技巧");
-        MvcResult createResult = mockMvc.perform(post("/admin/articles")
+        MvcResult createResult = mockMvc.perform(post("/api/admin/articles")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(createDto)))
@@ -147,19 +147,19 @@ public class SupportFeaturesIntegrationTest {
         UUID articleId = createdArticle.id();
 
         // 2. Student gets the list of articles
-        mockMvc.perform(get("/student/articles").header("Authorization", studentToken))
+        mockMvc.perform(get("/api/student/articles").header("Authorization", studentToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)))
                 .andExpect(jsonPath("$[0].id", is(articleId.toString())));
 
         // 3. Student gets a specific article
-        mockMvc.perform(get("/student/articles/" + articleId).header("Authorization", studentToken))
+        mockMvc.perform(get("/api/student/articles/" + articleId).header("Authorization", studentToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content", is("宿舍生活指南")));
 
         // 4. Admin updates the article
         ArticleUpdateDto updateDto = new ArticleUpdateDto("更新版指南", null, "心理健康");
-        mockMvc.perform(put("/admin/articles/" + articleId)
+        mockMvc.perform(put("/api/admin/articles/" + articleId)
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(updateDto)))
@@ -168,11 +168,11 @@ public class SupportFeaturesIntegrationTest {
                 .andExpect(jsonPath("$.category", is("心理健康")));
 
         // 5. Admin deletes the article
-        mockMvc.perform(delete("/admin/articles/" + articleId).header("Authorization", adminToken))
+        mockMvc.perform(delete("/api/admin/articles/" + articleId).header("Authorization", adminToken))
                 .andExpect(status().isNoContent());
 
         // 6. Student cannot find the article anymore
-        mockMvc.perform(get("/student/articles/" + articleId).header("Authorization", studentToken))
+        mockMvc.perform(get("/api/student/articles/" + articleId).header("Authorization", studentToken))
                 .andExpect(status().isNotFound());
     }
 
@@ -183,24 +183,24 @@ public class SupportFeaturesIntegrationTest {
         Notification notification = new Notification();
         notification.setUser(studentUser);
         notification.setMessage("您的分配结果已出炉！");
-        notification.setLinkUrl("/student/result");
+        notification.setLinkUrl("/api/student/result");
         notification = notificationRepository.save(notification);
         UUID notificationId = notification.getId();
 
         // 1. Student gets their notifications
-        mockMvc.perform(get("/student/notifications").header("Authorization", studentToken))
+        mockMvc.perform(get("/api/student/notifications").header("Authorization", studentToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)))
                 .andExpect(jsonPath("$[0].isRead", is(false)))
                 .andExpect(jsonPath("$[0].message", is("您的分配结果已出炉！")));
 
         // 2. Student marks the notification as read
-        mockMvc.perform(post("/student/notifications/" + notificationId + "/read")
+        mockMvc.perform(post("/api/student/notifications/" + notificationId + "/read")
                         .header("Authorization", studentToken))
                 .andExpect(status().isNoContent());
 
         // 3. Student gets notifications again and verifies it's read
-        mockMvc.perform(get("/student/notifications").header("Authorization", studentToken))
+        mockMvc.perform(get("/api/student/notifications").header("Authorization", studentToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)))
                 .andExpect(jsonPath("$[0].isRead", is(true)));
@@ -221,7 +221,7 @@ public class SupportFeaturesIntegrationTest {
 
     private String getToken(String username, String password) throws Exception {
         LoginRequest loginRequest = new LoginRequest(username, password);
-        MvcResult result = mockMvc.perform(post("/auth/login")
+        MvcResult result = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(loginRequest)))
                 .andExpect(status().isOk())

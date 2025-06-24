@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/student")
+@RequestMapping("/api/student")
 @PreAuthorize("hasRole('STUDENT')")
 public class StudentSupportController {
 

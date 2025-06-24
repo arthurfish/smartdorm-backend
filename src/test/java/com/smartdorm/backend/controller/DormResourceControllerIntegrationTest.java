@@ -89,7 +89,7 @@ class DormResourceControllerIntegrationTest {
 
     private String getAdminToken(String username, String password) throws Exception {
         LoginRequest loginRequest = new LoginRequest(username, password);
-        MvcResult result = mockMvc.perform(post("/auth/login")
+        MvcResult result = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(loginRequest)))
                 .andExpect(status().isOk())
@@ -103,7 +103,7 @@ class DormResourceControllerIntegrationTest {
     void adminCanManageBuildings() throws Exception {
         // 1. Create Building
         BuildingCreateUpdateDto createDto = new BuildingCreateUpdateDto("紫荆1号楼");
-        MvcResult createResult = mockMvc.perform(post("/admin/dorm-buildings")
+        MvcResult createResult = mockMvc.perform(post("/api/admin/dorm-buildings")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(createDto)))
@@ -114,14 +114,14 @@ class DormResourceControllerIntegrationTest {
         UUID buildingId = createdBuilding.id();
 
         // 2. Get All Buildings
-        mockMvc.perform(get("/admin/dorm-buildings").header("Authorization", adminToken))
+        mockMvc.perform(get("/api/admin/dorm-buildings").header("Authorization", adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)))
                 .andExpect(jsonPath("$[0].name", is("紫荆1号楼")));
 
         // 3. Update Building
         BuildingCreateUpdateDto updateDto = new BuildingCreateUpdateDto("紫荆1号楼 (新)");
-        mockMvc.perform(put("/admin/dorm-buildings/" + buildingId)
+        mockMvc.perform(put("/api/admin/dorm-buildings/" + buildingId)
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(updateDto)))
@@ -129,7 +129,7 @@ class DormResourceControllerIntegrationTest {
                 .andExpect(jsonPath("$.name", is("紫荆1号楼 (新)")));
 
         // 4. Delete Building
-        mockMvc.perform(delete("/admin/dorm-buildings/" + buildingId).header("Authorization", adminToken))
+        mockMvc.perform(delete("/api/admin/dorm-buildings/" + buildingId).header("Authorization", adminToken))
                 .andExpect(status().isNoContent());
     }
 
@@ -147,7 +147,7 @@ class DormResourceControllerIntegrationTest {
         room.setGenderType("MALE");
         roomRepository.save(room);
 
-        mockMvc.perform(delete("/admin/dorm-buildings/" + building.getId()).header("Authorization", adminToken))
+        mockMvc.perform(delete("/api/admin/dorm-buildings/" + building.getId()).header("Authorization", adminToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message", is("Cannot delete building with id " + building.getId() + " because it contains rooms.")));
     }
@@ -161,7 +161,7 @@ class DormResourceControllerIntegrationTest {
         building = buildingRepository.save(building);
 
         RoomCreateUpdateDto roomDto = new RoomCreateUpdateDto(building.getId(), "201", 4, "FEMALE");
-        MvcResult roomResult = mockMvc.perform(post("/admin/dorm-rooms")
+        MvcResult roomResult = mockMvc.perform(post("/api/admin/dorm-rooms")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(roomDto)))
@@ -171,7 +171,7 @@ class DormResourceControllerIntegrationTest {
 
         // Create beds for the room
         BedCreateRequestDto bedRequest = new BedCreateRequestDto(4);
-        mockMvc.perform(post("/admin/rooms/" + createdRoom.id() + "/beds")
+        mockMvc.perform(post("/api/admin/rooms/" + createdRoom.id() + "/beds")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(bedRequest)))
@@ -195,7 +195,7 @@ class DormResourceControllerIntegrationTest {
         userRepository.save(student);
         String studentToken = getAdminToken("student01", "studentpass");
 
-        mockMvc.perform(get("/admin/dorm-buildings").header("Authorization", studentToken))
+        mockMvc.perform(get("/api/admin/dorm-buildings").header("Authorization", studentToken))
                 .andExpect(status().isForbidden());
     }
 }

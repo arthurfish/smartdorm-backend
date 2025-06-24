@@ -414,7 +414,7 @@ components:
       properties:
         id: { type: string, format: uuid }
         message: { type: string, example: "您的宿舍分配结果已公布！" }
-        linkUrl: { type: string, nullable: true, example: "/student/result" }
+        linkUrl: { type: string, nullable: true, example: "/api/student/result" }
         isRead: { type: boolean, default: false }
         createdAt: { type: string, format: date-time }
 

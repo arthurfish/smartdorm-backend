@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/admin/cycles")
+@RequestMapping("/api/admin/cycles")
 @PreAuthorize("hasRole('ADMIN')")
 public class CycleController {
 

@@ -84,7 +84,7 @@ class AuthControllerIntegrationTest {
     void login_withValidCredentials_shouldReturnTokenAndUserDto() throws Exception {
         LoginRequest loginRequest = new LoginRequest("S001", "password123");
 
-        mockMvc.perform(post("/auth/login")
+        mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(loginRequest)))
                 .andExpect(status().isOk())
@@ -101,7 +101,7 @@ class AuthControllerIntegrationTest {
     void login_withInvalidPassword_shouldReturnUnauthorized() throws Exception {
         LoginRequest loginRequest = new LoginRequest("S001", "wrongpassword");
 
-        mockMvc.perform(post("/auth/login")
+        mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(loginRequest)))
                 .andExpect(status().isUnauthorized())
@@ -114,7 +114,7 @@ class AuthControllerIntegrationTest {
     void login_withNonExistentUser_shouldReturnUnauthorized() throws Exception {
         LoginRequest loginRequest = new LoginRequest("S999", "password123");
 
-        mockMvc.perform(post("/auth/login")
+        mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(loginRequest)))
                 .andExpect(status().isUnauthorized());
@@ -123,7 +123,7 @@ class AuthControllerIntegrationTest {
     @Test
     @DisplayName("公开端点访问: /ping 应无需认证即可访问")
     void ping_publicEndpoint_shouldBeAccessible() throws Exception {
-        mockMvc.perform(get("/ping"))
+        mockMvc.perform(get("/api/ping"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ok"));
     }
@@ -131,7 +131,7 @@ class AuthControllerIntegrationTest {
     @Test
     @DisplayName("受保护端点访问失败: 无Token应返回401 Unauthorized")
     void accessSecuredEndpoint_withoutToken_shouldReturnUnauthorized() throws Exception {
-        mockMvc.perform(get("/users/me"))
+        mockMvc.perform(get("/api/users/me"))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -140,7 +140,7 @@ class AuthControllerIntegrationTest {
     void accessSecuredEndpoint_withValidToken_shouldReturnOkAndUserData() throws Exception {
         // 步骤 1: 登录以获取有效的JWT
         LoginRequest loginRequest = new LoginRequest("S001", "password123");
-        MvcResult result = mockMvc.perform(post("/auth/login")
+        MvcResult result = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(loginRequest)))
                 .andExpect(status().isOk())
@@ -153,7 +153,7 @@ class AuthControllerIntegrationTest {
         assertThat(token).isNotNull();
 
         // 步骤 2: 使用获取到的token访问受保护的 /users/me 端点
-        mockMvc.perform(get("/users/me")
+        mockMvc.perform(get("/api/users/me")
                         .header("Authorization", "Bearer " + token)) // 在请求头中附带token
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.studentId").value("S001"))

@@ -79,7 +79,7 @@ class CycleControllerIntegrationTest {
 
     private String getAdminToken(String username, String password) throws Exception {
         LoginRequest loginRequest = new LoginRequest(username, password);
-        MvcResult result = mockMvc.perform(post("/auth/login")
+        MvcResult result = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(loginRequest)))
                 .andExpect(status().isOk())
@@ -93,7 +93,7 @@ class CycleControllerIntegrationTest {
     void adminCanManageFullLifecycleOfCycleAndDimensions() throws Exception {
         // 1. Create a cycle
         MatchingCycleCreateDto createDto = new MatchingCycleCreateDto("2024秋季新生分配", null, null);
-        MvcResult cycleResult = mockMvc.perform(post("/admin/cycles")
+        MvcResult cycleResult = mockMvc.perform(post("/api/admin/cycles")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(createDto)))
@@ -112,7 +112,7 @@ class CycleControllerIntegrationTest {
         SurveyDimensionCreateDto dimensionDto = new SurveyDimensionCreateDto(
                 "rest_habit", "你的作息习惯是？", "SOFT_FACTOR", "SINGLE_CHOICE", 2.0, null, false, options);
 
-        mockMvc.perform(post("/admin/cycles/" + cycleId + "/dimensions")
+        mockMvc.perform(post("/api/admin/cycles/" + cycleId + "/dimensions")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(dimensionDto)))
@@ -122,7 +122,7 @@ class CycleControllerIntegrationTest {
                 .andExpect(jsonPath("$.options[0].optionText", is("早睡早起")));
 
         // 3. Get dimensions for the cycle and verify
-        mockMvc.perform(get("/admin/cycles/" + cycleId + "/dimensions").header("Authorization", adminToken))
+        mockMvc.perform(get("/api/admin/cycles/" + cycleId + "/dimensions").header("Authorization", adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)))
                 .andExpect(jsonPath("$[0].prompt", is("你的作息习惯是？")));
@@ -130,25 +130,25 @@ class CycleControllerIntegrationTest {
         // 4. Delete the cycle (should fail because status is not DRAFT)
         // First, let's update status to OPEN
         MatchingCycleUpdateDto updateStatusDto = new MatchingCycleUpdateDto(null, null, null, "OPEN");
-        mockMvc.perform(put("/admin/cycles/" + cycleId)
+        mockMvc.perform(put("/api/admin/cycles/" + cycleId)
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(updateStatusDto)))
                 .andExpect(status().isOk());
 
         // Now, try to delete it
-        mockMvc.perform(delete("/admin/cycles/" + cycleId).header("Authorization", adminToken))
+        mockMvc.perform(delete("/api/admin/cycles/" + cycleId).header("Authorization", adminToken))
                 .andExpect(status().isConflict());
 
         // 5. Change status back to DRAFT and delete successfully
         MatchingCycleUpdateDto revertStatusDto = new MatchingCycleUpdateDto(null, null, null, "DRAFT");
-        mockMvc.perform(put("/admin/cycles/" + cycleId)
+        mockMvc.perform(put("/api/admin/cycles/" + cycleId)
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(revertStatusDto)))
                 .andExpect(status().isOk());
 
-        mockMvc.perform(delete("/admin/cycles/" + cycleId).header("Authorization", adminToken))
+        mockMvc.perform(delete("/api/admin/cycles/" + cycleId).header("Authorization", adminToken))
                 .andExpect(status().isNoContent());
     }
 }

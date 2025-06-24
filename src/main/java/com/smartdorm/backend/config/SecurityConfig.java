@@ -1,3 +1,4 @@
+// src/main/java/com/smartdorm/backend/config/SecurityConfig.java
 package com.smartdorm.backend.config;
 
 import com.smartdorm.backend.security.JwtAccessDeniedHandler;
@@ -5,6 +6,7 @@ import com.smartdorm.backend.security.JwtAuthenticationEntryPoint;
 import com.smartdorm.backend.security.JwtRequestFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -16,17 +18,17 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 
 @Configuration
 @EnableWebSecurity
-@EnableMethodSecurity(prePostEnabled = true) // To enable @PreAuthorize
+@EnableMethodSecurity(prePostEnabled = true)
 public class SecurityConfig {
 
     private final JwtRequestFilter jwtRequestFilter;
-    private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint; // 注入认证入口点
+    private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
     private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
 
-    // 构造方法注入（Spring Boot 2.7+推荐）
     public SecurityConfig(JwtRequestFilter jwtRequestFilter,
                           JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint,
                           JwtAccessDeniedHandler jwtAccessDeniedHandler) {
@@ -35,6 +37,7 @@ public class SecurityConfig {
         this.jwtAccessDeniedHandler = jwtAccessDeniedHandler;
     }
 
+    // --- 现有 Bean 保持不变 ---
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
@@ -45,24 +48,52 @@ public class SecurityConfig {
         return authenticationConfiguration.getAuthenticationManager();
     }
 
+    // --- 安全链配置调整 ---
+
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    @Order(1) // API 安全链，处理无状态的 JWT 请求
+    public SecurityFilterChain apiSecurityFilterChain(HttpSecurity http) throws Exception {
         http
-                // **关键修复：使用明确的方式禁用 CSRF**
-                .csrf(AbstractHttpConfigurer::disable)
+                .securityMatcher("/api/**") // **关键**: 此链只处理 /api/** 下的请求
+                .csrf(AbstractHttpConfigurer::disable) // **关键**: 对 API 禁用 CSRF
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/api/ping").permitAll() // 确保 API 登录端点是公开的
+                        .requestMatchers("/api/auth/login").permitAll() // 确保 API 登录端点是公开的
+                        .anyRequest().authenticated()
+                )
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(jwtAuthenticationEntryPoint)
                         .accessDeniedHandler(jwtAccessDeniedHandler)
                 )
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/auth/login", "/ping").permitAll()
-                        .requestMatchers("/**").authenticated()
-                        .anyRequest().denyAll()
-                )
-                // 配置会话管理为无状态，因为我们使用JWT
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                // 在标准的用户名密码认证过滤器之前，添加我们的JWT过滤器
                 .addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class);
+        return http.build();
+    }
+
+    @Bean
+    @Order(2) // 视图安全链，处理有状态的表单登录和页面访问
+    public SecurityFilterChain formLoginFilterChain(HttpSecurity http) throws Exception {
+        http
+                .authorizeHttpRequests(auth -> auth
+                        // 公开访问的资源
+                        .requestMatchers("/css/**", "/js/**", "/error", "/ping", "/login", "/perform_login").permitAll()
+                        // 权限控制
+                        .requestMatchers("/view/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/view/student/**").hasRole("STUDENT")
+                        // 其他任何请求都需要认证
+                        .anyRequest().authenticated()
+                )
+                .formLogin(form -> form
+                        .loginPage("/login") // 指定登录页面的 URL
+                        .loginProcessingUrl("/perform_login") // 处理登录请求的 URL
+                        .defaultSuccessUrl("/view/home", true) // 登录成功后的重定向 URL
+                        .failureUrl("/login?error=true") // 登录失败后的 URL
+                )
+                .logout(logout -> logout
+                        .logoutUrl("/perform_logout")
+                        .logoutSuccessUrl("/login?logout=true")
+                );
+        // 注意：这里不需要禁用 CSRF，因为表单登录和 Thymeleaf 会处理它
         return http.build();
     }
 }

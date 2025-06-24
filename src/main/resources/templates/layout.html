@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title th:text="${pageTitle} ?: '智慧宿舍分配系统'">智慧宿舍分配系统</title>
+    <!-- 引入 Pico.css -->
+    <link rel="stylesheet" th:href="@{/css/pico.min.css}">
+    <!-- 引入自定义样式 (Vercel风格微调) -->
+    <!-- <link rel="stylesheet" th:href="@{/css/custom.css}"> -->
+</head>
+<!-- 默认使用亮色主题, 可通过JS切换 -->
+<body data-theme="light">
+<header class="container">
+    <nav>
+        <ul>
+            <li><strong>智慧宿舍分配系统</strong></li>
+        </ul>
+        <ul>
+            <!-- 用户已登录 -->
+            <li sec:authorize="isAuthenticated()">
+                <span sec:authentication="name"></span>
+                (<span sec:authentication="principal.authorities[0]"></span>)
+            </li>
+            <li sec:authorize="isAuthenticated()">
+                <form th:action="@{/perform_logout}" method="post" style="display: inline;">
+                    <button type="submit" class="secondary outline">登出</button>
+                </form>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+<main class="container" layout:fragment="content">
+    <!-- 每个页面的具体内容将替换这里 -->
+    <p>页面内容加载中...</p>
+</main>
+
+<footer class="container" style="text-align: center; margin-top: 2rem; color: var(--pico-muted-color);">
+    <small>© 2024 智慧宿舍分配系统. All rights reserved.</small>
+</footer>
+
+</body>
+</html>

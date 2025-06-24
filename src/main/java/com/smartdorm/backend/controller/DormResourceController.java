@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/admin")
+@RequestMapping("/api/admin")
 @PreAuthorize("hasRole('ADMIN')") // Secure all endpoints in this controller
 public class DormResourceController {
 

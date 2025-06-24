@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
  * Controller to handle user-related operations.
  */
 @RestController
-@RequestMapping("/users")
+@RequestMapping("/api/users")
 public class UserController {
 
     private final UserRepository userRepository;

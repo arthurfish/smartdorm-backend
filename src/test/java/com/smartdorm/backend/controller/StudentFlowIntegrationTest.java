@@ -107,7 +107,7 @@ public class StudentFlowIntegrationTest {
     @DisplayName("学生可以获取问卷、提交答案、并查看模拟的分配结果")
     void studentCanPerformFullSurveyAndResultCheckFlow() throws Exception {
         // Step 1: Student gets the survey
-        mockMvc.perform(get("/student/survey").header("Authorization", studentToken))
+        mockMvc.perform(get("/api/student/survey").header("Authorization", studentToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.cycleId", is(openCycle.getId().toString())))
                 .andExpect(jsonPath("$.dimensions", hasSize(1)))
@@ -117,14 +117,14 @@ public class StudentFlowIntegrationTest {
         StudentDtos.ResponseItem responseItem = new StudentDtos.ResponseItem(surveyDimension.getId(), 4.0);
         StudentDtos.UserResponseSubmitDto submitDto = new StudentDtos.UserResponseSubmitDto(List.of(responseItem));
 
-        mockMvc.perform(post("/student/responses")
+        mockMvc.perform(post("/api/student/responses")
                         .header("Authorization", studentToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(submitDto)))
                 .andExpect(status().isOk());
 
         // Step 3: Admin triggers the assignment (placeholder)
-        mockMvc.perform(post("/admin/cycles/" + openCycle.getId() + "/trigger-assignment")
+        mockMvc.perform(post("/api/admin/cycles/" + openCycle.getId() + "/trigger-assignment")
                         .header("Authorization", adminToken))
                 .andExpect(status().isAccepted());
 
@@ -132,7 +132,7 @@ public class StudentFlowIntegrationTest {
         createMockResults();
 
         // Step 5: Student checks their result
-        mockMvc.perform(get("/student/result").header("Authorization", studentToken))
+        mockMvc.perform(get("/api/student/result").header("Authorization", studentToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.assignment.building", is("Test Building")))
                 .andExpect(jsonPath("$.assignment.room", is("101")))
@@ -154,7 +154,7 @@ public class StudentFlowIntegrationTest {
 
     private String getToken(String username, String password) throws Exception {
         LoginRequest loginRequest = new LoginRequest(username, password);
-        MvcResult result = mockMvc.perform(post("/auth/login")
+        MvcResult result = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(loginRequest)))
                 .andExpect(status().isOk())

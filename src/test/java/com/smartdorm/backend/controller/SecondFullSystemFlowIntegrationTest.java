@@ -127,7 +127,7 @@ public class SecondFullSystemFlowIntegrationTest {
     @DisplayName("步骤1 [ADM-05]: 管理员设置基础物理资源（楼栋、房间、床位）")
     void step1_AdminManagesDormResources() throws Exception {
         BuildingCreateUpdateDto createBuildingDto = new BuildingCreateUpdateDto("紫荆公寓");
-        MvcResult buildingResult = mockMvc.perform(post("/admin/dorm-buildings")
+        MvcResult buildingResult = mockMvc.perform(post("/api/admin/dorm-buildings")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(createBuildingDto)))
@@ -137,7 +137,7 @@ public class SecondFullSystemFlowIntegrationTest {
         assertNotNull(this.buildingId);
 
         RoomCreateUpdateDto createRoomDto = new RoomCreateUpdateDto(this.buildingId, "401", 4, "MALE");
-        MvcResult roomResult = mockMvc.perform(post("/admin/dorm-rooms")
+        MvcResult roomResult = mockMvc.perform(post("/api/admin/dorm-rooms")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(createRoomDto)))
@@ -148,7 +148,7 @@ public class SecondFullSystemFlowIntegrationTest {
         assertNotNull(this.roomId);
 
         BedCreateRequestDto createBedDto = new BedCreateRequestDto(2);
-        MvcResult bedsResult = mockMvc.perform(post("/admin/rooms/" + this.roomId + "/beds")
+        MvcResult bedsResult = mockMvc.perform(post("/api/admin/rooms/" + this.roomId + "/beds")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(createBedDto)))
@@ -166,7 +166,7 @@ public class SecondFullSystemFlowIntegrationTest {
     @DisplayName("步骤2 [ADM-01, ADM-02]: 管理员创建分配周期并设计问卷")
     void step2_AdminCreatesCycleAndDesignsSurvey() throws Exception {
         MatchingCycleCreateDto createCycleDto = new MatchingCycleCreateDto("2024级计算机学院新生分配", Instant.now(), Instant.now().plusSeconds(86400 * 7));
-        MvcResult cycleResult = mockMvc.perform(post("/admin/cycles")
+        MvcResult cycleResult = mockMvc.perform(post("/api/admin/cycles")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(createCycleDto)))
@@ -177,13 +177,13 @@ public class SecondFullSystemFlowIntegrationTest {
 
         List<OptionCreateDto> cleanlinessOptions = List.of(new OptionCreateDto("每日打扫", 1.0), new OptionCreateDto("每周打扫", 3.0), new OptionCreateDto("有空再打扫", 5.0));
         SurveyDimensionCreateDto cleanlinessDim = new SurveyDimensionCreateDto("cleanliness", "你对宿舍的整洁度要求是？", "SOFT_FACTOR", "SINGLE_CHOICE", 1.5, null, false, cleanlinessOptions);
-        MvcResult dim1Result = mockMvc.perform(post("/admin/cycles/" + this.cycleId + "/dimensions").header("Authorization", adminToken).contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(cleanlinessDim))).andExpect(status().isCreated()).andReturn();
+        MvcResult dim1Result = mockMvc.perform(post("/api/admin/cycles/" + this.cycleId + "/dimensions").header("Authorization", adminToken).contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(cleanlinessDim))).andExpect(status().isCreated()).andReturn();
         this.cleanlinessDimensionId = objectMapper.readValue(dim1Result.getResponse().getContentAsString(), SurveyDimensionDto.class).id();
         assertNotNull(this.cleanlinessDimensionId);
 
         List<OptionCreateDto> atmosphereOptions = List.of(new OptionCreateDto("希望安静学习", 1.0), new OptionCreateDto("希望热闹活跃", 2.0));
         SurveyDimensionCreateDto atmosphereDim = new SurveyDimensionCreateDto("atmosphere", "你期望的宿舍氛围是？", "HARD_FILTER", "SINGLE_CHOICE", 1.0, null, false, atmosphereOptions);
-        MvcResult dim2Result = mockMvc.perform(post("/admin/cycles/" + this.cycleId + "/dimensions").header("Authorization", adminToken).contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(atmosphereDim))).andExpect(status().isCreated()).andReturn();
+        MvcResult dim2Result = mockMvc.perform(post("/api/admin/cycles/" + this.cycleId + "/dimensions").header("Authorization", adminToken).contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(atmosphereDim))).andExpect(status().isCreated()).andReturn();
         this.atmosphereDimensionId = objectMapper.readValue(dim2Result.getResponse().getContentAsString(), SurveyDimensionDto.class).id();
         assertNotNull(this.atmosphereDimensionId);
     }
@@ -193,17 +193,17 @@ public class SecondFullSystemFlowIntegrationTest {
     @DisplayName("步骤3 [STU-02]: 管理员开放周期，学生获取问卷并提交")
     void step3_AdminOpensCycleAndStudentsSubmitSurvey() throws Exception {
         MatchingCycleUpdateDto updateDto = new MatchingCycleUpdateDto(null, null, null, "OPEN");
-        mockMvc.perform(put("/admin/cycles/" + this.cycleId).header("Authorization", adminToken).contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(updateDto))).andExpect(status().isOk());
+        mockMvc.perform(put("/api/admin/cycles/" + this.cycleId).header("Authorization", adminToken).contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(updateDto))).andExpect(status().isOk());
 
-        mockMvc.perform(get("/student/survey").header("Authorization", studentToken)).andExpect(status().isOk()).andExpect(jsonPath("$.dimensions", hasSize(2)));
+        mockMvc.perform(get("/api/student/survey").header("Authorization", studentToken)).andExpect(status().isOk()).andExpect(jsonPath("$.dimensions", hasSize(2)));
 
         List<ResponseItem> student1Responses = List.of(new ResponseItem(cleanlinessDimensionId, 1.0), new ResponseItem(atmosphereDimensionId, 1.0));
         UserResponseSubmitDto submitDto1 = new UserResponseSubmitDto(student1Responses);
-        mockMvc.perform(post("/student/responses").header("Authorization", studentToken).contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(submitDto1))).andExpect(status().isOk());
+        mockMvc.perform(post("/api/student/responses").header("Authorization", studentToken).contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(submitDto1))).andExpect(status().isOk());
 
         List<ResponseItem> student2Responses = List.of(new ResponseItem(cleanlinessDimensionId, 3.0), new ResponseItem(atmosphereDimensionId, 1.0));
         UserResponseSubmitDto submitDto2 = new UserResponseSubmitDto(student2Responses);
-        mockMvc.perform(post("/student/responses").header("Authorization", roommateToken).contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(submitDto2))).andExpect(status().isOk());
+        mockMvc.perform(post("/api/student/responses").header("Authorization", roommateToken).contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(submitDto2))).andExpect(status().isOk());
     }
 
     @Test
@@ -211,7 +211,7 @@ public class SecondFullSystemFlowIntegrationTest {
     @DisplayName("步骤4 [ADM-03, ADM-08]: 管理员触发分配并检验结果质量 (增强测试)")
     void step4_AdminTriggersAndValidatesAssignment() throws Exception {
         // 1. Admin triggers assignment
-        mockMvc.perform(post("/admin/cycles/" + this.cycleId + "/trigger-assignment")
+        mockMvc.perform(post("/api/admin/cycles/" + this.cycleId + "/trigger-assignment")
                         .header("Authorization", adminToken))
                 .andExpect(status().isAccepted());
 
@@ -220,7 +220,7 @@ public class SecondFullSystemFlowIntegrationTest {
         createMatchingResult(cycleId, roommateUser.getId(), bed2Id, roomId);
 
         // 2. Admin validates the results and we assert the full response structure
-        mockMvc.perform(get("/admin/cycles/" + this.cycleId + "/validate-results")
+        mockMvc.perform(get("/api/admin/cycles/" + this.cycleId + "/validate-results")
                         .header("Authorization", adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isValid", is(true)))
@@ -236,7 +236,7 @@ public class SecondFullSystemFlowIntegrationTest {
     @Order(5)
     @DisplayName("步骤5 [ADM-04]: 管理员查看最终分配结果清单")
     void step5_AdminViewsAssignmentResults() throws Exception {
-        mockMvc.perform(get("/admin/cycles/" + this.cycleId + "/results")
+        mockMvc.perform(get("/api/admin/cycles/" + this.cycleId + "/results")
                         .header("Authorization", adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(2)))
@@ -249,7 +249,7 @@ public class SecondFullSystemFlowIntegrationTest {
     @Order(6)
     @DisplayName("步骤6 [STU-03, STU-04]: 学生查看分配结果并提交反馈和申请")
     void step6_StudentChecksResultAndSubmitsSupportRequests() throws Exception {
-        mockMvc.perform(get("/student/result").header("Authorization", studentToken))
+        mockMvc.perform(get("/api/student/result").header("Authorization", studentToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.assignment.building", is("紫荆公寓")))
                 .andExpect(jsonPath("$.assignment.room", is("401")))
@@ -258,7 +258,7 @@ public class SecondFullSystemFlowIntegrationTest {
 
         // Submit Feedback
         var feedbackDto = new SupportDtos.FeedbackCreateDto(false, 5, "分配结果很满意！");
-        mockMvc.perform(post("/student/feedback")
+        mockMvc.perform(post("/api/student/feedback")
                         .header("Authorization", studentToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(feedbackDto)))
@@ -266,7 +266,7 @@ public class SecondFullSystemFlowIntegrationTest {
 
         // Submit Swap Request
         var swapDto = new SupportDtos.SwapRequestCreateDto("感觉空调位置不太好，想换一个床位。");
-        mockMvc.perform(post("/student/swap-requests")
+        mockMvc.perform(post("/api/student/swap-requests")
                         .header("Authorization", studentToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(swapDto)))
@@ -281,7 +281,7 @@ public class SecondFullSystemFlowIntegrationTest {
     @DisplayName("步骤7 [ADM-06, ADM-07]: 管理员处理申请并发布内容")
     void step7_AdminProcessesRequestsAndPublishesContent() throws Exception {
         var swapUpdateDto = new SupportDtos.SwapRequestUpdateDto("APPROVED", "已与同学沟通，同意调换。");
-        mockMvc.perform(put("/admin/swap-requests/" + this.swapRequestId + "/process")
+        mockMvc.perform(put("/api/admin/swap-requests/" + this.swapRequestId + "/process")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(swapUpdateDto)))
@@ -289,7 +289,7 @@ public class SecondFullSystemFlowIntegrationTest {
                 .andExpect(jsonPath("$.status", is("APPROVED")));
 
         var articleDto = new SupportDtos.ArticleCreateDto("宿舍文化建设小贴士", "...", "宿舍文化");
-        mockMvc.perform(post("/admin/articles")
+        mockMvc.perform(post("/api/admin/articles")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(articleDto)))
@@ -300,7 +300,7 @@ public class SecondFullSystemFlowIntegrationTest {
     @Order(8)
     @DisplayName("步骤8 [STU-05]: 学生查看支持内容和通知")
     void step8_StudentViewsContentAndNotifications() throws Exception {
-        mockMvc.perform(get("/student/articles?category=宿舍文化").header("Authorization", studentToken))
+        mockMvc.perform(get("/api/student/articles?category=宿舍文化").header("Authorization", studentToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)))
                 .andExpect(jsonPath("$[0].title", is("宿舍文化建设小贴士")));
@@ -311,7 +311,7 @@ public class SecondFullSystemFlowIntegrationTest {
         notification.setMessage("您的调宿申请已被批准");
         notificationRepository.save(notification);
 
-        mockMvc.perform(get("/student/notifications").header("Authorization", studentToken))
+        mockMvc.perform(get("/api/student/notifications").header("Authorization", studentToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].message", containsString("您的调宿申请已被批准")));
     }
@@ -331,7 +331,7 @@ public class SecondFullSystemFlowIntegrationTest {
 
     private String getToken(String username, String password) throws Exception {
         LoginRequest loginRequest = new LoginRequest(username, password);
-        MvcResult result = mockMvc.perform(post("/auth/login")
+        MvcResult result = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(loginRequest)))
                 .andExpect(status().isOk())

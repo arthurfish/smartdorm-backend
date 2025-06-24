@@ -7,7 +7,7 @@ import java.util.Map;
 @RestController
 public class HealthCheckController {
 
-    @GetMapping("/ping")
+    @GetMapping("/api/ping")
     public Map<String, String> ping() {
         return Map.of("status", "ok", "message", "Service is running!");
     }

@@ -103,7 +103,7 @@ public class FullLifecycleIntegrationTest {
         System.out.println("====== PHASE P2: 宿舍资源管理 ======");
         // Admin creates a new building
         BuildingCreateUpdateDto buildingDto = new BuildingCreateUpdateDto("紫荆公寓A栋");
-        MvcResult buildingResult = mockMvc.perform(post("/admin/dorm-buildings")
+        MvcResult buildingResult = mockMvc.perform(post("/api/admin/dorm-buildings")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(buildingDto)))
@@ -115,7 +115,7 @@ public class FullLifecycleIntegrationTest {
 
         // Admin creates a room in that building
         RoomCreateUpdateDto roomDto = new RoomCreateUpdateDto(buildingId, "101", 4, "MALE");
-        MvcResult roomResult = mockMvc.perform(post("/admin/dorm-rooms")
+        MvcResult roomResult = mockMvc.perform(post("/api/admin/dorm-rooms")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(roomDto)))
@@ -127,7 +127,7 @@ public class FullLifecycleIntegrationTest {
 
         // Admin creates beds for that room
         BedCreateRequestDto bedRequestDto = new BedCreateRequestDto(4);
-        MvcResult bedsResult = mockMvc.perform(post("/admin/rooms/" + roomId + "/beds")
+        MvcResult bedsResult = mockMvc.perform(post("/api/admin/rooms/" + roomId + "/beds")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(bedRequestDto)))
@@ -142,7 +142,7 @@ public class FullLifecycleIntegrationTest {
         System.out.println("\n====== PHASE P3: 匹配周期与问卷管理 ======");
         // Admin creates a new matching cycle
         MatchingCycleCreateDto cycleCreateDto = new MatchingCycleCreateDto("2024级新生秋季分配", null, null);
-        MvcResult cycleResult = mockMvc.perform(post("/admin/cycles")
+        MvcResult cycleResult = mockMvc.perform(post("/api/admin/cycles")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(cycleCreateDto)))
@@ -161,7 +161,7 @@ public class FullLifecycleIntegrationTest {
         );
         SurveyDimensionCreateDto dimensionCreateDto = new SurveyDimensionCreateDto(
                 "rest_habit", "你的作息习惯是？", "SOFT_FACTOR", "SINGLE_CHOICE", 1.5, null, false, options);
-        MvcResult dimensionResult = mockMvc.perform(post("/admin/cycles/" + cycleId + "/dimensions")
+        MvcResult dimensionResult = mockMvc.perform(post("/api/admin/cycles/" + cycleId + "/dimensions")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(dimensionCreateDto)))
@@ -173,7 +173,7 @@ public class FullLifecycleIntegrationTest {
 
         // Admin opens the cycle for students
         MatchingCycleUpdateDto cycleUpdateDto = new MatchingCycleUpdateDto(null, null, null, "OPEN");
-        mockMvc.perform(put("/admin/cycles/" + cycleId)
+        mockMvc.perform(put("/api/admin/cycles/" + cycleId)
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(cycleUpdateDto)))
@@ -183,7 +183,7 @@ public class FullLifecycleIntegrationTest {
 
         System.out.println("\n====== PHASE P4: 学生核心流程 ======");
         // Student 1 (张三) gets the survey
-        mockMvc.perform(get("/student/survey").header("Authorization", studentToken1))
+        mockMvc.perform(get("/api/student/survey").header("Authorization", studentToken1))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.cycleId", is(cycleId.toString())))
                 .andExpect(jsonPath("$.dimensions", hasSize(1)))
@@ -193,7 +193,7 @@ public class FullLifecycleIntegrationTest {
         // Student 1 (张三) submits his response (he is an early bird)
         ResponseItem responseItem1 = new ResponseItem(dimensionId, 1.0);
         UserResponseSubmitDto submitDto1 = new UserResponseSubmitDto(List.of(responseItem1));
-        mockMvc.perform(post("/student/responses")
+        mockMvc.perform(post("/api/student/responses")
                         .header("Authorization", studentToken1)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(submitDto1)))
@@ -203,7 +203,7 @@ public class FullLifecycleIntegrationTest {
         // Student 2 (李四) also submits his response (he is also an early bird)
         ResponseItem responseItem2 = new ResponseItem(dimensionId, 1.0);
         UserResponseSubmitDto submitDto2 = new UserResponseSubmitDto(List.of(responseItem2));
-        mockMvc.perform(post("/student/responses")
+        mockMvc.perform(post("/api/student/responses")
                         .header("Authorization", studentToken2)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(submitDto2)))
@@ -211,13 +211,13 @@ public class FullLifecycleIntegrationTest {
         System.out.println("学生2 (李四) 成功提交问卷答案。");
 
         // Admin triggers the assignment (placeholder logic)
-        mockMvc.perform(post("/admin/cycles/" + cycleId + "/trigger-assignment")
+        mockMvc.perform(post("/api/admin/cycles/" + cycleId + "/trigger-assignment")
                         .header("Authorization", adminToken))
                 .andExpect(status().isAccepted());
         System.out.println("管理员已触发分配流程 (占位符)。");
 
         // Verify cycle status changed to COMPLETED
-        mockMvc.perform(get("/admin/cycles/" + cycleId).header("Authorization", adminToken))
+        mockMvc.perform(get("/api/admin/cycles/" + cycleId).header("Authorization", adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status", is("COMPLETED")));
         System.out.println("分配周期状态已验证为: COMPLETED");
@@ -231,7 +231,7 @@ public class FullLifecycleIntegrationTest {
 
         System.out.println("\n====== PHASE P4 (続き): 学生查看结果 ======");
         // Student 1 (张三) checks his assignment result
-        mockMvc.perform(get("/student/result").header("Authorization", studentToken1))
+        mockMvc.perform(get("/api/student/result").header("Authorization", studentToken1))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.assignment.building", is("紫荆公寓A栋")))
                 .andExpect(jsonPath("$.assignment.room", is("101")))
@@ -246,7 +246,7 @@ public class FullLifecycleIntegrationTest {
         // Note: In a real app, authorId would be set automatically from the token.
         // The current implementation might need an update for that. We test as-is.
         String articleContent = "{\"title\": \"宿舍冲突解决指南\", \"content\": \"第一步，保持冷静...\", \"category\": \"心理健康\"}";
-        mockMvc.perform(post("/admin/articles")
+        mockMvc.perform(post("/api/admin/articles")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(articleContent))
@@ -273,7 +273,7 @@ public class FullLifecycleIntegrationTest {
 
     private String getToken(String username, String password) throws Exception {
         LoginRequest loginRequest = new LoginRequest(username, password);
-        MvcResult result = mockMvc.perform(post("/auth/login")
+        MvcResult result = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(loginRequest)))
                 .andExpect(status().isOk())
