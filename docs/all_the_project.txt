@@ -195,49 +195,77 @@ CREATE TABLE content_articles (
 .\make_files.ps1:
 <#
 .SYNOPSIS
-Creates blank files for the P5 support features in the project root directory.
-Does not overwrite existing files.
+    Creates the necessary empty files and directories for Phase 3 (Cycle & Dimension Management) of the SmartDorm project.
+.DESCRIPTION
+    This script will:
+    - Define a list of required file paths for Phase 3.
+    - Loop through each path.
+    - Automatically create the parent directory structure if it doesn't exist.
+    - Create a new, empty file if it doesn't already exist.
+    - Skip any file that already exists to prevent data loss.
+    - Provide clear output on what was created and what was skipped.
+.NOTES
+    Author: Your AI Assistant
+    Version: 1.0
+    Instructions: Run this script from the project root directory.
 #>
 
-# List of all files to create (relative to project root)
-$files = @(
-    "src/main/java/com/smartdorm/backend/entity/Feedback.java",
-    "src/main/java/com/smartdorm/backend/entity/SwapRequest.java",
-    "src/main/java/com/smartdorm/backend/entity/ContentArticle.java",
-    "src/main/java/com/smartdorm/backend/entity/Notification.java",
-    "src/main/java/com/smartdorm/backend/repository/FeedbackRepository.java",
-    "src/main/java/com/smartdorm/backend/repository/SwapRequestRepository.java",
-    "src/main/java/com/smartdorm/backend/repository/ContentArticleRepository.java",
-    "src/main/java/com/smartdorm/backend/repository/NotificationRepository.java",
-    "src/main/java/com/smartdorm/backend/dto/SupportDtos.java",
-    "src/main/java/com/smartdorm/backend/service/SupportService.java",
-    "src/main/java/com/smartdorm/backend/controller/StudentSupportController.java",
-    "src/main/java/com/smartdorm/backend/controller/AdminSupportController.java",
-    "src/test/java/com/smartdorm/backend/controller/SupportFeaturesIntegrationTest.java"
+# --- List of files to be created for Phase 3 ---
+$filesToCreate = @(
+    # Backend Controller & Test
+    "src/main/java/com/smartdorm/backend/controller/AdminCycleViewController.java",
+    "src/test/java/com/smartdorm/backend/controller/AdminCycleViewControllerTest.java",
+
+    # Frontend Thymeleaf Views
+    "src/main/resources/templates/admin/cycle/cycles-list.html",
+    "src/main/resources/templates/admin/cycle/cycle-form.html",
+    "src/main/resources/templates/admin/cycle/dimensions-list.html",
+    "src/main/resources/templates/admin/cycle/dimension-form.html",
+    "src/main/resources/templates/admin/cycle/_cycle-nav.html"
 )
 
-# Process each file
-foreach ($file in $files) {
-    # Get parent directory path
+Write-Host "Starting Phase 3 file creation..." -ForegroundColor Cyan
+Write-Host "------------------------------------"
+
+# --- Main logic to process each file ---
+foreach ($file in $filesToCreate) {
+    # Get the parent directory of the file
     $directory = Split-Path -Path $file -Parent
 
-    # Create directory if it doesn't exist
+    # Check if the directory exists, if not, create it
     if (-not (Test-Path -Path $directory -PathType Container)) {
-        New-Item -Path $directory -ItemType Directory -Force | Out-Null
-        Write-Host "Created directory: $directory"
+        try {
+            New-Item -Path $directory -ItemType Directory -Force -ErrorAction Stop | Out-Null
+            Write-Host "Created directory:" -ForegroundColor Green -NoNewline
+            Write-Host " $directory"
+        }
+        catch {
+            Write-Host "Error creating directory $directory`: $_" -ForegroundColor Red
+            # Stop processing if a directory cannot be created
+            break
+        }
     }
 
-    # Create file if it doesn't exist
+    # Check if the file exists, if not, create it as an empty file
     if (-not (Test-Path -Path $file -PathType Leaf)) {
-        New-Item -Path $file -ItemType File | Out-Null
-        Write-Host "Created file: $file"
-    } else {
-        Write-Host "Skipped existing file: $file"
+        try {
+            New-Item -Path $file -ItemType File -ErrorAction Stop | Out-Null
+            Write-Host "Created file:     " -ForegroundColor Green -NoNewline
+            Write-Host " $file"
+        }
+        catch {
+            Write-Host "Error creating file $file`: $_" -ForegroundColor Red
+        }
+    }
+    else {
+        # If the file already exists, skip it and notify the user
+        Write-Host "Skipped existing: " -ForegroundColor Yellow -NoNewline
+        Write-Host " $file"
     }
 }
 
-Write-Host "`nFile creation completed. Check the output for details."
-
+Write-Host "------------------------------------"
+Write-Host "Script finished. All required files for Phase 3 should now exist." -ForegroundColor Cyan
 ----------
 .\pom.xml:
 <?xml version="1.0" encoding="UTF-8"?>
@@ -336,6 +364,11 @@ Write-Host "`nFile creation completed. Check the output for details."
             <groupId>nz.net.ultraq.thymeleaf</groupId>
             <artifactId>thymeleaf-layout-dialect</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.thymeleaf.extras</groupId>
+            <artifactId>thymeleaf-extras-springsecurity6</artifactId>
+            <!-- 鐗堟湰鍙烽€氬父鐢眘pring-boot-starter-parent绠＄悊锛屾棤闇€鎸囧畾 -->
+        </dependency>
     </dependencies>
 
     <build>
@@ -355,6 +388,9 @@ Write-Host "`nFile creation completed. Check the output for details."
         </plugins>
     </build>
 </project>
+----------
+.\README.md:
+宸茬煡Bug锛氭棤娉曠骇鑱斿垹闄ゅ缓绛
 ----------
 .\src\main\java\com\smartdorm\backend\BackendApplication.java:
 package com.smartdorm.backend;
@@ -575,6 +611,157 @@ public class AdminAssignmentController {
     }
 }
 ----------
+.\src\main\java\com\smartdorm\backend\controller\AdminCycleViewController.java:
+// src/main/java/com/smartdorm/backend/controller/AdminCycleViewController.java
+package com.smartdorm.backend.controller;
+
+import com.smartdorm.backend.dto.CycleDtos;
+import com.smartdorm.backend.exception.ResourceNotFoundException;
+import com.smartdorm.backend.service.CycleManagementService;
+import jakarta.validation.Valid;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.util.StringUtils;
+import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+
+import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+
+@Controller
+@RequestMapping("/view/admin/cycles")
+@PreAuthorize("hasRole('ADMIN')")
+public class AdminCycleViewController {
+
+    private final CycleManagementService cycleService;
+
+    public AdminCycleViewController(CycleManagementService cycleService) {
+        this.cycleService = cycleService;
+    }
+
+    @GetMapping
+    public String listCycles(Model model) {
+        model.addAttribute("cycles", cycleService.getAllCycles());
+        return "admin/cycle/cycles-list";
+    }
+
+    @GetMapping("/new")
+    public String showNewCycleForm(Model model) {
+        if (!model.containsAttribute("cycleDto")) {
+            model.addAttribute("cycleDto", new CycleDtos.MatchingCycleCreateDto("", null, null));
+        }
+        model.addAttribute("pageTitle", "鏂板缓鍖归厤鍛ㄦ湡");
+        return "admin/cycle/cycle-form";
+    }
+    @PostMapping("/create")
+    public String createCycle(@Valid @ModelAttribute("cycleDto") CycleDtos.MatchingCycleCreateDto dto,
+                              BindingResult result, RedirectAttributes redirectAttributes) {
+        if (result.hasErrors()) {
+            redirectAttributes.addFlashAttribute("org.springframework.validation.BindingResult.cycleDto", result);
+            redirectAttributes.addFlashAttribute("cycleDto", dto);
+            return "redirect:/view/admin/cycles/new";
+        }
+        CycleDtos.MatchingCycleDto created = cycleService.createCycle(dto);
+        redirectAttributes.addFlashAttribute("successMessage", "鍛ㄦ湡 '" + created.name() + "' 鍒涘缓鎴愬姛锛?);
+        return "redirect:/view/admin/cycles";
+    }
+
+    @GetMapping("/{id}/edit")
+    public String showEditCycleForm(@PathVariable UUID id, Model model) {
+        if (!model.containsAttribute("cycleDto")) {
+            CycleDtos.MatchingCycleDto cycle = cycleService.getCycleById(id);
+            CycleDtos.MatchingCycleUpdateDto updateDto = new CycleDtos.MatchingCycleUpdateDto(cycle.name(), cycle.startDate(), cycle.endDate(), cycle.status());
+            model.addAttribute("cycleDto", updateDto);
+        }
+        model.addAttribute("cycleId", id);
+        model.addAttribute("pageTitle", "缂栬緫鍖归厤鍛ㄦ湡");
+        return "admin/cycle/cycle-form";
+    }
+
+    @PostMapping("/{id}/update")
+    public String updateCycle(@PathVariable UUID id, @Valid @ModelAttribute("cycleDto") CycleDtos.MatchingCycleUpdateDto dto,
+                              BindingResult result, RedirectAttributes redirectAttributes, Model model) {
+        if (result.hasErrors()) {
+            redirectAttributes.addFlashAttribute("org.springframework.validation.BindingResult.cycleDto", result);
+            redirectAttributes.addFlashAttribute("cycleDto", dto);
+            return "redirect:/view/admin/cycles/" + id + "/edit";
+        }
+        cycleService.updateCycle(id, dto);
+        redirectAttributes.addFlashAttribute("successMessage", "鍛ㄦ湡淇℃伅鏇存柊鎴愬姛锛?);
+        return "redirect:/view/admin/cycles";
+    }
+
+    @PostMapping("/{id}/delete")
+    public String deleteCycle(@PathVariable UUID id, RedirectAttributes redirectAttributes) {
+        try {
+            cycleService.deleteCycle(id);
+            redirectAttributes.addFlashAttribute("successMessage", "鍛ㄦ湡宸叉垚鍔熷垹闄ゃ€?);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("errorMessage", "鍒犻櫎澶辫触: " + e.getMessage());
+        }
+        return "redirect:/view/admin/cycles";
+    }
+
+    @GetMapping("/{cycleId}/dimensions")
+    public String listDimensions(@PathVariable UUID cycleId, Model model) {
+        model.addAttribute("cycle", cycleService.getCycleById(cycleId));
+        model.addAttribute("dimensions", cycleService.getDimensionsForCycle(cycleId));
+        return "admin/cycle/dimensions-list";
+    }
+
+    @GetMapping("/{cycleId}/dimensions/new")
+    public String showNewDimensionForm(@PathVariable UUID cycleId, Model model) {
+        if (!model.containsAttribute("dimensionDto")) {
+            CycleDtos.SurveyDimensionCreateDto dto = new CycleDtos.SurveyDimensionCreateDto();
+            // 棰勫～鍏?涓┖鐨勯€夐」琛?
+            dto.setOptions(IntStream.range(0, 4)
+                    .mapToObj(i -> new CycleDtos.OptionCreateDto("", null))
+                    .collect(Collectors.toList()));
+            model.addAttribute("dimensionDto", dto);
+        }
+        model.addAttribute("cycle", cycleService.getCycleById(cycleId));
+        model.addAttribute("pageTitle", "鏂板缓闂嵎缁村害");
+        return "admin/cycle/dimension-form";
+    }
+
+    // [鏈€缁堜慨姝ｇ増]
+    @PostMapping("/{cycleId}/dimensions/create")
+    public String createDimension(@PathVariable UUID cycleId,
+                                  @Valid @ModelAttribute("dimensionDto") CycleDtos.SurveyDimensionCreateDto dto,
+                                  BindingResult result, RedirectAttributes redirectAttributes) {
+
+        // 1. 杩囨护鎺夌敤鎴锋湭濉啓鐨勭┖閫夐」琛?
+        List<CycleDtos.OptionCreateDto> filteredOptions = dto.getOptions().stream()
+                .filter(option -> StringUtils.hasText(option.optionText()) && Objects.nonNull(option.optionValue()))
+                .collect(Collectors.toList());
+
+        // 2. 妫€鏌ヨ繃婊ゅ悗鐨勯€夐」鏄惁涓虹┖
+        if (filteredOptions.isEmpty()) {
+            result.rejectValue("options", "options.notempty", "蹇呴』鑷冲皯鎻愪緵涓€涓湁鏁堢殑閫夐」锛堟弿杩板拰鍒嗗€奸兘闇€濉啓锛夈€?);
+        }
+
+        // 3. 濡傛灉鏈変换浣曢獙璇侀敊璇紙鏉ヨ嚜@Valid娉ㄨВ鐨勶紝鎴栨垜浠墜鍔ㄦ坊鍔犵殑锛夛紝鍒欓噸瀹氬悜
+        if (result.hasErrors()) {
+            redirectAttributes.addFlashAttribute("org.springframework.validation.BindingResult.dimensionDto", result);
+            redirectAttributes.addFlashAttribute("dimensionDto", dto); // 灏嗙敤鎴峰師濮嬭緭鍏ヤ紶鍥?
+            return "redirect:/view/admin/cycles/" + cycleId + "/dimensions/new";
+        }
+
+        // 4. 鐢ㄨ繃婊ゅ悗鐨勫共鍑€閫夐」鍒楄〃鏇存柊DTO锛岀劧鍚庝紶閫掔粰鏈嶅姟灞?
+        dto.setOptions(filteredOptions);
+        cycleService.createDimensionForCycle(cycleId, dto);
+
+        redirectAttributes.addFlashAttribute("successMessage", "闂嵎缁村害 '" + dto.getPrompt() + "' 鍒涘缓鎴愬姛锛?);
+        return "redirect:/view/admin/cycles/" + cycleId + "/dimensions";
+    }
+}
+
+----------
 .\src\main\java\com\smartdorm\backend\controller\AdminDormViewController.java:
 package com.smartdorm.backend.controller;
 
@@ -669,24 +856,19 @@ public class AdminDormViewController {
 
     @GetMapping("/rooms")
     public String listRooms(Model model, @RequestParam(required = false) UUID buildingId) {
-        // Fetch all rooms and buildings for filtering
-        // In a real large-scale app, this would be paginated and fetched from service layer more efficiently
-        List<DormDtos.DormRoomDto> allRooms = dormResourceService.getAllRooms(); // Assuming you add this method to your service
-        List<DormDtos.DormBuildingDto> allBuildings = dormResourceService.getAllBuildings();
+        List<RoomDetailDto> allRoomDetails = dormResourceService.getRoomDetails();
 
-        List<DormDtos.DormRoomDto> filteredRooms = allRooms;
+        // **BUG淇**: 鐩存帴鍦ㄨ幏鍙栧埌鐨?roomDetails 鍒楄〃涓婅繘琛岃繃婊?
+        List<RoomDetailDto> filteredRoomDetails = allRoomDetails;
         if (buildingId != null) {
-            filteredRooms = allRooms.stream()
+            filteredRoomDetails = allRoomDetails.stream()
                     .filter(room -> room.buildingId().equals(buildingId))
                     .collect(Collectors.toList());
         }
 
-        model.addAttribute("rooms", filteredRooms);
-        model.addAttribute("buildings", allBuildings);
-        model.addAttribute("selectedBuildingId", buildingId); // To keep the filter active
-
-        // Enhance rooms with building names for display
-        model.addAttribute("roomDetails", dormResourceService.getRoomDetails()); // You will create this method
+        model.addAttribute("roomDetails", filteredRoomDetails);
+        model.addAttribute("buildings", dormResourceService.getAllBuildings());
+        model.addAttribute("selectedBuildingId", buildingId);
 
         return "admin/dorm/rooms-list";
     }
@@ -716,10 +898,9 @@ public class AdminDormViewController {
 
     @GetMapping("/rooms/{id}/edit")
     public String showEditRoomForm(@PathVariable UUID id, Model model) {
-        // You'll need a getRoomById in your service layer
-        RoomDetailDto room = dormResourceService.getRoomDetails().stream()
-                .filter(r -> r.id().equals(id)).findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Invalid room Id:" + id));
+        // **銆愭牳蹇冧慨澶嶃€?*
+        // 纭繚杩欓噷涔熻皟鐢ㄧ殑鏄?getRoomDetailById
+        RoomDetailDto room = dormResourceService.getRoomDetailById(id);
 
         DormDtos.RoomCreateUpdateDto dto = new DormDtos.RoomCreateUpdateDto(room.buildingId(), room.roomNumber(), room.capacity(), room.genderType());
 
@@ -757,19 +938,18 @@ public class AdminDormViewController {
 
     @GetMapping("/rooms/{roomId}/details")
     public String showRoomDetailsAndBeds(@PathVariable UUID roomId, Model model) {
-        RoomDetailDto roomDetails = dormResourceService.getRoomDetails().stream()
-                .filter(r -> r.id().equals(roomId)).findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Invalid room Id:" + roomId));
+        // **銆愭牳蹇冧慨澶嶃€?*
+        // 纭繚杩欓噷璋冪敤鐨勬槸 getRoomDetailById锛岃€屼笉鏄?getRoomDetails().stream()...
+        RoomDetailDto roomDetails = dormResourceService.getRoomDetailById(roomId);
 
-        List<DormDtos.BedDto> beds = dormResourceService.getBedsForRoom(roomId); // You will create this method
+        List<DormDtos.BedDto> beds = dormResourceService.getBedsForRoom(roomId);
 
         model.addAttribute("room", roomDetails);
         model.addAttribute("beds", beds);
-        model.addAttribute("bedCreateDto", new DormDtos.BedCreateRequestDto(1)); // For the form
+        model.addAttribute("bedCreateDto", new DormDtos.BedCreateRequestDto(1));
         model.addAttribute("pageTitle", "鎴块棿璇︽儏涓庡簥浣嶇鐞?);
         return "admin/dorm/room-details";
     }
-
     @PostMapping("/rooms/{roomId}/beds/create-batch")
     public String createBedsBatch(@PathVariable UUID roomId,
                                   @Valid @ModelAttribute("bedCreateDto") DormDtos.BedCreateRequestDto dto,
@@ -1382,6 +1562,7 @@ public class AdminDtos {
 }
 ----------
 .\src\main\java\com\smartdorm\backend\dto\CycleDtos.java:
+// src/main/java/com/smartdorm/backend/dto/CycleDtos.java
 package com.smartdorm.backend.dto;
 
 import jakarta.validation.Valid;
@@ -1389,8 +1570,11 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.PositiveOrZero;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -1409,7 +1593,7 @@ public class CycleDtos {
             String responseType,
             double weight,
             String parentDimensionKey,
-            boolean isReverseScored,
+            boolean reverseScored, // [淇敼] 瀛楁鍚嶇粺涓€
             List<DimensionOptionDto> options
     ) {}
 
@@ -1429,27 +1613,42 @@ public class CycleDtos {
     ) {}
 
     public record OptionCreateDto(
-            @NotEmpty String optionText,
-            @NotNull Double optionValue
+            String optionText, // [淇敼] 绉婚櫎 @NotEmpty锛岀敱Controller鎵嬪姩楠岃瘉
+            Double optionValue   // [淇敼] 绉婚櫎 @NotNull锛岀敱Controller鎵嬪姩楠岃瘉
     ) {}
 
-    public record SurveyDimensionCreateDto(
-            @NotEmpty String dimensionKey,
-            @NotEmpty String prompt,
-            @NotEmpty @Pattern(regexp = "HARD_FILTER|SOFT_FACTOR", message = "dimensionType must be HARD_FILTER or SOFT_FACTOR")
-            String dimensionType,
-            @NotEmpty @Pattern(regexp = "SCALE|SINGLE_CHOICE|COMPOSITE", message = "responseType must be SCALE, SINGLE_CHOICE, or COMPOSITE")
-            String responseType,
-            @NotNull @PositiveOrZero Double weight,
-            String parentDimensionKey,
-            boolean isReverseScored,
-            @Valid List<OptionCreateDto> options
-    ) {}
+    // [鍏抽敭閲嶆瀯] 灏?SurveyDimensionCreateDto 浠?record 鏀逛负 class
+    @Data
+    @NoArgsConstructor
+    public static class SurveyDimensionCreateDto {
+        @NotEmpty
+        private String dimensionKey;
+
+        @NotEmpty
+        private String prompt;
+
+        @NotEmpty @Pattern(regexp = "HARD_FILTER|SOFT_FACTOR")
+        private String dimensionType = "SOFT_FACTOR";
+
+        @NotEmpty @Pattern(regexp = "SCALE|SINGLE_CHOICE|COMPOSITE")
+        private String responseType = "SINGLE_CHOICE";
+
+        @NotNull @PositiveOrZero
+        private Double weight = 1.0;
+
+        private String parentDimensionKey;
+
+        // [淇敼] 瀛楁鍚嶇粺涓€涓?reverseScored
+        private boolean reverseScored = false;
+
+        @Valid
+        private List<OptionCreateDto> options = new ArrayList<>();
+    }
 
     public record SurveyDimensionUpdateDto(
             @NotEmpty String prompt,
             @NotNull @PositiveOrZero Double weight,
-            boolean isReverseScored
+            boolean reverseScored // [淇敼] 瀛楁鍚嶇粺涓€
     ) {}
 }
 ----------
@@ -1947,14 +2146,15 @@ import java.util.UUID;
 })
 public class SurveyDimension {
 
+    // ... 鍏朵粬瀛楁淇濇寔涓嶅彉 ...
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "cycle_id", nullable = false)
-    @ToString.Exclude // Avoid circular dependency in toString
-    @EqualsAndHashCode.Exclude // Avoid circular dependency in equals/hashCode
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     private MatchingCycle cycle;
 
     @Column(name = "dimension_key", nullable = false, length = 100)
@@ -1964,10 +2164,10 @@ public class SurveyDimension {
     private String prompt;
 
     @Column(name = "dimension_type", nullable = false, length = 20)
-    private String dimensionType; // HARD_FILTER, SOFT_FACTOR
+    private String dimensionType;
 
     @Column(name = "response_type", nullable = false, length = 20)
-    private String responseType; // SCALE, SINGLE_CHOICE, COMPOSITE
+    private String responseType;
 
     @Column(nullable = false)
     private double weight = 1.0;
@@ -1975,8 +2175,10 @@ public class SurveyDimension {
     @Column(name = "parent_dimension_key", length = 100)
     private String parentDimensionKey;
 
-    @Column(name = "is_reverse_scored", nullable = false)
-    private boolean isReverseScored = false;
+    // [鍏抽敭淇敼] 灏嗗瓧娈靛悕浠?isReverseScored 鏀逛负 reverseScored
+    // JPA 鍜?Lombok 浼氬皢鍏舵槧灏勫埌鏁版嵁搴撶殑 is_reverse_scored 鎴?reverse_scored 鍒?
+    @Column(name = "reverse_scored", nullable = false)
+    private boolean reverseScored = false;
 
     @OneToMany(mappedBy = "dimension", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     private List<DimensionOption> options = new ArrayList<>();
@@ -2207,11 +2409,6 @@ public class CycleMapper {
     public MatchingCycleDto toDto(MatchingCycle cycle) {
         return new MatchingCycleDto(cycle.getId(), cycle.getName(), cycle.getStartDate(), cycle.getEndDate(), cycle.getStatus());
     }
-
-    public DimensionOptionDto toDto(DimensionOption option) {
-        return new DimensionOptionDto(option.getId(), option.getOptionText(), option.getOptionValue());
-    }
-
     public SurveyDimensionDto toDto(SurveyDimension dimension) {
         return new SurveyDimensionDto(
                 dimension.getId(),
@@ -2221,9 +2418,14 @@ public class CycleMapper {
                 dimension.getResponseType(),
                 dimension.getWeight(),
                 dimension.getParentDimensionKey(),
+                // [鍏抽敭淇敼] 瀹炰綋涓殑瀛楁鍚嶄篃寤鸿鍚屾淇敼锛屼絾濡傛灉鏆傛椂涓嶅姩锛実etter灏辨槸isReverseScored()
                 dimension.isReverseScored(),
                 dimension.getOptions().stream().map(this::toDto).collect(Collectors.toList())
         );
+    }
+
+    public DimensionOptionDto toDto(DimensionOption option) {
+        return new DimensionOptionDto(option.getId(), option.getOptionText(), option.getOptionValue());
     }
 }
 ----------
@@ -2897,20 +3099,22 @@ public class CycleManagementService {
 
         SurveyDimension dimension = new SurveyDimension();
         dimension.setCycle(cycle);
-        dimension.setDimensionKey(dto.dimensionKey());
-        dimension.setPrompt(dto.prompt());
-        dimension.setDimensionType(dto.dimensionType());
-        dimension.setResponseType(dto.responseType());
-        dimension.setWeight(dto.weight());
-        dimension.setParentDimensionKey(dto.parentDimensionKey());
+        dimension.setDimensionKey(dto.getDimensionKey());
+        dimension.setPrompt(dto.getPrompt());
+        dimension.setDimensionType(dto.getDimensionType());
+        dimension.setResponseType(dto.getResponseType());
+        dimension.setWeight(dto.getWeight());
+        dimension.setParentDimensionKey(dto.getParentDimensionKey());
+        // [鍏抽敭淇] 浣跨敤 isReverseScored() getter
         dimension.setReverseScored(dto.isReverseScored());
 
-        if (dto.options() != null) {
-            List<DimensionOption> options = dto.options().stream().map(optDto -> {
+        // 鐜板湪杩欓噷鐨刣to.getOptions()鏄粡杩嘋ontroller娓呯悊鍚庣殑骞插噣鍒楄〃锛屼笉浼氭湁null鍊?
+        if (dto.getOptions() != null) {
+            List<DimensionOption> options = dto.getOptions().stream().map(optDto -> {
                 DimensionOption option = new DimensionOption();
                 option.setOptionText(optDto.optionText());
-                option.setOptionValue(optDto.optionValue());
-                option.setDimension(dimension); // Link back to parent
+                option.setOptionValue(optDto.optionValue()); // 杩欓噷涓嶄細鍐嶆湁NullPointerException
+                option.setDimension(dimension);
                 return option;
             }).collect(Collectors.toList());
             dimension.getOptions().addAll(options);
@@ -2918,6 +3122,7 @@ public class CycleManagementService {
 
         return cycleMapper.toDto(dimensionRepository.save(dimension));
     }
+
 
     public List<SurveyDimensionDto> getDimensionsForCycle(UUID cycleId) {
         if (!cycleRepository.existsById(cycleId)) {
@@ -2934,7 +3139,8 @@ public class CycleManagementService {
 
         dimension.setPrompt(dto.prompt());
         dimension.setWeight(dto.weight());
-        dimension.setReverseScored(dto.isReverseScored());
+        // [鍏抽敭淇敼] record 鐨勮闂櫒灏辨槸瀛楁鍚?
+        dimension.setReverseScored(dto.reverseScored());
 
         return cycleMapper.toDto(dimensionRepository.save(dimension));
     }
@@ -3121,6 +3327,21 @@ public class DormResourceService {
         return bedRepository.findByRoomIdOrderByBedNumberAsc(roomId).stream()
                 .map(dormMapper::toDto)
                 .collect(Collectors.toList());
+    }
+
+    public RoomDetailDto getRoomDetailById(UUID roomId) {
+        DormRoom room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new ResourceNotFoundException("Room not found with id: " + roomId));
+
+        // This is efficient as it only fetches what's needed
+        return new RoomDetailDto(
+                room.getId(),
+                room.getRoomNumber(),
+                room.getCapacity(),
+                room.getGenderType(),
+                room.getBuilding().getId(),
+                room.getBuilding().getName() // Eagerly fetched or lazy loaded here
+        );
     }
 
 }
@@ -3517,6 +3738,7 @@ logging:
 </html>
 ----------
 .\src\main\resources\templates\admin\dashboard.html:
+<!-- src/main/resources/templates/admin/dashboard.html -->
 <!DOCTYPE html>
 <html lang="zh-CN"
       layout:decorate="~{layout}"
@@ -3531,13 +3753,14 @@ logging:
     <hgroup>
         <h2>绠＄悊鍛樹富闈㈡澘</h2>
         <h3>娆㈣繋鎮紝<span sec:authentication="name">Admin</span>锛佸湪杩欓噷绠＄悊鏁翠釜瀹胯垗鍒嗛厤娴佺▼銆?/h3>
-
     </hgroup>
     <div class="grid">
         <article>
-            <h4><a href="#cycles" class="contrast">绠＄悊鍖归厤鍛ㄦ湡</a></h4>
+            <!-- [淇敼] 娣诲姞浜嗘纭殑 th:href -->
+            <h4><a th:href="@{/view/admin/cycles}" class="contrast">绠＄悊鍖归厤鍛ㄦ湡</a></h4>
             <p>鍒涘缓銆佹煡鐪嬨€侀厤缃棶鍗峰拰鍚姩鏂扮殑鍒嗛厤鍛ㄦ湡銆?/p>
-            <footer><a href="#cycles" role="button">鍓嶅線绠＄悊</a></footer>
+            <!-- [淇敼] 娣诲姞浜嗘纭殑 th:href -->
+            <footer><a th:href="@{/view/admin/cycles}" role="button">鍓嶅線绠＄悊</a></footer>
         </article>
         <article>
             <h4><a th:href="@{/view/admin/dorms/buildings}" class="contrast">绠＄悊瀹胯垗璧勬簮</a></h4>
@@ -3552,6 +3775,312 @@ logging:
     </div>
 </section>
 
+</body>
+</html>
+----------
+.\src\main\resources\templates\admin\cycle\cycle-form.html:
+<!-- src/main/resources/templates/admin/cycle/cycle-form.html -->
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:th="http://www.thymeleaf.org" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title th:text="${pageTitle}">鍛ㄦ湡琛ㄥ崟</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <hgroup>
+        <h2 th:text="${pageTitle}">鏂板缓/缂栬緫鍖归厤鍛ㄦ湡</h2>
+        <h3>濉啓鍛ㄦ湡鐨勫熀鏈俊鎭€?/h3>
+    </hgroup>
+
+    <article>
+        <!-- [鍏抽敭淇] 淇浜唗h:action鐨凾hymeleaf琛ㄨ揪寮忚娉?-->
+        <form th:action="@{${cycleId == null ? '/view/admin/cycles/create' : '/view/admin/cycles/' + cycleId + '/update'}}"
+              th:object="${cycleDto}"
+              method="post">
+
+            <label for="name">
+                鍛ㄦ湡鍚嶇О
+                <input type="text" id="name" th:field="*{name}" placeholder="渚嬪锛?024绾ф柊鐢熺瀛ｅ垎閰? required
+                       th:aria-invalid="${#fields.hasErrors('name')} ? 'true' : 'false'">
+                <small th:if="${#fields.hasErrors('name')}" th:errors="*{name}" class="error"></small>
+            </label>
+
+            <div class="grid">
+                <label for="startDate">
+                    寮€濮嬫棩鏈?(閫夊～)
+                    <!-- Thymeleaf鏈熸湜鏃ユ湡鏍煎紡涓?yyyy-MM-dd -->
+                    <input type="date" id="startDate" th:field="*{startDate}">
+                </label>
+                <label for="endDate">
+                    缁撴潫鏃ユ湡 (閫夊～)
+                    <input type="date" id="endDate" th:field="*{endDate}">
+                </label>
+            </div>
+
+            <label for="status" th:if="${cycleId != null}">
+                鐘舵€?
+                <select id="status" th:field="*{status}">
+                    <option value="DRAFT">鑽夌 (DRAFT)</option>
+                    <option value="OPEN">寮€鏀?(OPEN)</option>
+                    <option value="COMPLETED">瀹屾垚 (COMPLETED)</option>
+                </select>
+            </label>
+
+            <div class="grid">
+                <a th:href="@{/view/admin/cycles}" role="button" class="secondary outline">鍙栨秷</a>
+                <button type="submit" th:text="${cycleId == null} ? '鍒涘缓鍛ㄦ湡' : '淇濆瓨鏇存敼'">鎻愪氦</button>
+            </div>
+        </form>
+    </article>
+</section>
+</body>
+</html>
+----------
+.\src\main\resources\templates\admin\cycle\cycles-list.html:
+<!-- src/main/resources/templates/admin/cycle/cycles-list.html -->
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title>鍖归厤鍛ㄦ湡绠＄悊</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <hgroup style="margin-bottom: 0;">
+            <h2>鍖归厤鍛ㄦ湡绠＄悊</h2>
+            <h3>鍒涘缓鍜岀鐞嗘墍鏈夊鑸嶅垎閰嶅懆鏈熴€?/h3>
+        </hgroup>
+        <a th:href="@{/view/admin/cycles/new}" role="button" style="margin-bottom: 1rem;">鏂板缓鍖归厤鍛ㄦ湡</a>
+    </div>
+
+    <div th:if="${successMessage}" class="success" th:text="${successMessage}" style="margin-bottom: 1rem;"></div>
+    <div th:if="${errorMessage}" class="error" th:text="${errorMessage}" style="margin-bottom: 1rem;"></div>
+
+    <figure>
+        <table role="grid">
+            <thead>
+            <tr>
+                <th scope="col">鍛ㄦ湡鍚嶇О</th>
+                <th scope="col">鐘舵€?/th>
+                <th scope="col">寮€濮嬫棩鏈?/th>
+                <th scope="col">缁撴潫鏃ユ湡</th>
+                <th scope="col" style="text-align: right;">鎿嶄綔</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:if="${#lists.isEmpty(cycles)}">
+                <td colspan="5">鏆傛棤鍖归厤鍛ㄦ湡锛岃鍏堟柊寤恒€?/td>
+            </tr>
+            <tr th:each="cycle : ${cycles}">
+                <td th:text="${cycle.name()}">2024绉嬪鏂扮敓</td>
+                <td>
+                    <span th:text="${cycle.status()}"
+                          th:classappend="${cycle.status() == 'OPEN'} ? 'success' : (${cycle.status() == 'COMPLETED'} ? 'contrast' : '')"
+                          style="padding: 0.2rem 0.5rem; border-radius: var(--pico-border-radius); font-weight: bold; font-size: 0.8em;"
+                          th:styleappend="${cycle.status() == 'OPEN'} ? 'background-color: var(--pico-form-element-valid-border-color); color: white;' : (${cycle.status() == 'COMPLETED'} ? 'background-color: var(--pico-color-indigo-600); color: white;' : 'background-color: var(--pico-muted-border-color);')">
+                    </span>
+                </td>
+                <td th:text="${cycle.startDate() != null} ? ${#temporals.format(cycle.startDate(), 'yyyy-MM-dd')} : '鏈缃?"></td>
+                <td th:text="${cycle.endDate() != null} ? ${#temporals.format(cycle.endDate(), 'yyyy-MM-dd')} : '鏈缃?"></td>
+                <td style="text-align: right;">
+                    <div role="group">
+                        <a th:href="@{/view/admin/cycles/{id}/dimensions(id=${cycle.id()})}" role="button">闂嵎绠＄悊</a>
+                        <a th:href="@{/view/admin/cycles/{id}/edit(id=${cycle.id()})}" role="button" class="secondary outline">缂栬緫</a>
+                        <form th:action="@{/view/admin/cycles/{id}/delete(id=${cycle.id()})}" method="post" style="display: inline;" onsubmit="return confirm('纭畾瑕佸垹闄ゆ鍛ㄦ湡鍚楋紵姝ゆ搷浣滀笉鍙仮澶嶃€?);" th:if="${cycle.status() == 'DRAFT'}">
+                            <button type="submit" class="contrast outline">鍒犻櫎</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </figure>
+    <a th:href="@{/view/admin/dashboard}">鈫?杩斿洖涓婚潰鏉?/a>
+</section>
+</body>
+</html>
+----------
+.\src\main\resources\templates\admin\cycle\dimension-form.html:
+<!-- src/main/resources/templates/admin/cycle/dimension-form.html -->
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title th:text="${pageTitle}">缁村害琛ㄥ崟</title>
+    <style>
+        .option-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 1rem;
+            align-items: end;
+        }
+    </style>
+</head>
+<body>
+<section layout:fragment="content">
+    <div th:replace="~{admin/cycle/_cycle-nav :: subnav(cycleId=${cycle.id()}, activeTab='dimensions')}"></div>
+    <hgroup>
+        <!-- [淇敼] 鍔ㄦ€佹樉绀哄懆鏈熷悕绉?-->
+        <h2 th:text="${pageTitle} + ' for ' + ${cycle.name()}">鏂板缓闂嵎缁村害</h2>
+        <h3>璁捐涓€涓棶鍗烽棶棰橈紝鍖呮嫭鍏剁被鍨嬨€佹潈閲嶅拰閫夐」銆?/h3>
+    </hgroup>
+
+    <article>
+        <!-- 琛ㄥ崟 action 涓殑 cycleId 搴旇鐢?cycle.id() -->
+        <form th:action="@{/view/admin/cycles/{id}/dimensions/create(id=${cycle.id()})}"
+              th:object="${dimensionDto}"
+              method="post">
+
+            <!-- 鍏朵粬琛ㄥ崟鍐呭淇濇寔涓嶅彉... -->
+            <div class="grid">
+                <label for="prompt">
+                    闂/鎻愮ず璇?
+                    <input type="text" id="prompt" th:field="*{prompt}" placeholder="渚嬪锛氫綘鐨勪綔鎭範鎯槸锛? required
+                           th:aria-invalid="${#fields.hasErrors('prompt')} ? 'true' : 'false'">
+                    <small th:if="${#fields.hasErrors('prompt')}" th:errors="*{prompt}" class="error"></small>
+                </label>
+                <label for="dimensionKey">
+                    鍞竴鏍囪瘑 (Key)
+                    <input type="text" id="dimensionKey" th:field="*{dimensionKey}" placeholder="渚嬪锛歳est_habit" required
+                           th:aria-invalid="${#fields.hasErrors('dimensionKey')} ? 'true' : 'false'">
+                    <small th:if="${#fields.hasErrors('dimensionKey')}" th:errors="*{dimensionKey}" class="error"></small>
+                </label>
+            </div>
+
+            <div class="grid">
+                <label for="dimensionType">
+                    缁村害鐢ㄩ€?
+                    <select id="dimensionType" th:field="*{dimensionType}">
+                        <option value="SOFT_FACTOR">杞€у尮閰嶅洜瀛?(鐢ㄤ簬璁＄畻鐩镐技搴?</option>
+                        <option value="HARD_FILTER">纭€х瓫閫夋潯浠?(鐢ㄤ簬鍒嗙粍)</option>
+                    </select>
+                </label>
+                <label for="responseType">
+                    鍥炵瓟绫诲瀷
+                    <select id="responseType" th:field="*{responseType}">
+                        <option value="SINGLE_CHOICE">鍗曢€?/option>
+                        <option value="SCALE">閲忚〃 (1-5鍒?</option>
+                        <option value="COMPOSITE" disabled>澶嶅悎缁村害 (鏆備笉鏀寔)</option>
+                    </select>
+                </label>
+                <label for="weight">
+                    鏉冮噸
+                    <input type="number" step="0.1" id="weight" th:field="*{weight}" required>
+                </label>
+            </div>
+
+            <hr>
+            <h5>闂閫夐」璁剧疆 (璇疯嚦灏戝～鍐欏墠涓や釜)</h5>
+            <div th:each="option, iterStat : *{options}" class="grid">
+                <label th:for="${'optionText' + iterStat.index}">
+                    閫夐」 [[${iterStat.count}]] 鎻忚堪
+                    <input type="text" th:id="${'optionText' + iterStat.index}" th:field="*{options[__${iterStat.index}__].optionText}" placeholder="閫夐」鎻忚堪">
+                </label>
+                <label th:for="${'optionValue' + iterStat.index}">
+                    鍒嗗€?
+                    <input type="number" step="0.1" th:id="${'optionValue' + iterStat.index}" th:field="*{options[__${iterStat.index}__].optionValue}">
+                </label>
+            </div>
+            <small th:if="${#fields.hasGlobalErrors()}" th:errors="*{}" class="error"></small>
+            <small th:if="${#fields.hasErrors('options')}" th:errors="*{options}" class="error"></small>
+
+            <label for="reverseScored">
+                <input type="checkbox" id="reverseScored" th:field="*{reverseScored}">
+                鏄惁鍙嶅悜璁″垎 (閫変腑鍚庯紝楂樺垎琛ㄧず璐熷悜)
+            </label>
+
+            <div class="grid">
+                <a th:href="@{/view/admin/cycles/{id}/dimensions(id=${cycle.id()})}" role="button" class="secondary outline">鍙栨秷</a>
+                <button type="submit">鍒涘缓缁村害</button>
+            </div>
+        </form>
+    </article>
+</section>
+</body>
+</html>
+----------
+.\src\main\resources\templates\admin\cycle\dimensions-list.html:
+<!-- src/main/resources/templates/admin/cycle/dimensions-list.html -->
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title>闂嵎绠＄悊 - [[${cycle.name()}]]</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <div th:replace="~{admin/cycle/_cycle-nav :: subnav(cycleId=${cycle.id()}, activeTab='dimensions')}"></div>
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <hgroup style="margin-bottom: 0;">
+            <h2>闂嵎缁村害绠＄悊: [[${cycle.name()}]]</h2>
+            <h3>鍦ㄦ涓哄懆鏈熻璁￠棶鍗烽棶棰橈紙缁村害锛夈€?/h3>
+        </hgroup>
+        <a th:href="@{/view/admin/cycles/{id}/dimensions/new(id=${cycle.id()})}" role="button" style="margin-bottom: 1rem;">鏂板缁村害</a>
+    </div>
+
+    <div th:if="${successMessage}" class="success" th:text="${successMessage}" style="margin-bottom: 1rem;"></div>
+    <div th:if="${errorMessage}" class="error" th:text="${errorMessage}" style="margin-bottom: 1rem;"></div>
+
+    <figure>
+        <table role="grid">
+            <thead>
+            <tr>
+                <th scope="col">闂/鎻愮ず</th>
+                <th scope="col">Key</th>
+                <th scope="col">绫诲瀷</th>
+                <th scope="col">鏉冮噸</th>
+                <th scope="col" style="text-align: right;">鎿嶄綔</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:if="${#lists.isEmpty(dimensions)}">
+                <td colspan="5">璇ュ懆鏈熸殏鏃犻棶鍗风淮搴︼紝璇峰厛鏂板銆?/td>
+            </tr>
+            <tr th:each="dim : ${dimensions}">
+                <td th:text="${dim.prompt()}"></td>
+                <td><code th:text="${dim.dimensionKey()}"></code></td>
+                <td th:text="${dim.dimensionType()}"></td>
+                <td th:text="${dim.weight()}"></td>
+                <td style="text-align: right;">
+                    <div role="group">
+                        <a href="#" role="button" class="secondary outline">缂栬緫</a>
+                        <form action="#" method="post" style="display: inline;" onsubmit="return confirm('纭畾瑕佸垹闄ゆ缁村害鍚楋紵');">
+                            <button type="submit" class="contrast outline">鍒犻櫎</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </figure>
+    <a th:href="@{/view/admin/cycles}">鈫?杩斿洖鍛ㄦ湡鍒楄〃</a>
+</section>
+</body>
+</html>
+----------
+.\src\main\resources\templates\admin\cycle\_cycle-nav.html:
+<!-- src/main/resources/templates/admin/cycle/_cycle-nav.html -->
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<body>
+<nav th:fragment="subnav(cycleId, activeTab)" aria-label="breadcrumb">
+    <ul>
+        <li>
+            <a th:href="@{/view/admin/cycles/{id}/dimensions(id=${cycleId})}"
+               th:aria-current="${activeTab == 'dimensions' ? 'page' : null}">
+                闂嵎缁村害绠＄悊
+            </a>
+        </li>
+        <li>
+            <a href="#" th:aria-current="${activeTab == 'results' ? 'page' : null}">
+                鍒嗛厤缁撴灉
+            </a>
+        </li>
+        <li>
+            <a href="#" th:aria-current="${activeTab == 'report' ? 'page' : null}">
+                璐ㄩ噺鎶ュ憡
+            </a>
+        </li>
+    </ul>
+</nav>
 </body>
 </html>
 ----------
@@ -3598,6 +4127,7 @@ logging:
 </head>
 <body>
 <section layout:fragment="content">
+    <div th:replace="~{admin/dorm/_dorm-nav :: subnav(activeTab='buildings')}"></div>
     <div style="display: flex; justify-content: space-between; align-items: center;">
         <hgroup style="margin-bottom: 0;">
             <h2>妤兼爧璧勬簮绠＄悊</h2>
@@ -3649,13 +4179,7 @@ logging:
 </head>
 <body>
 <section layout:fragment="content">
-    <nav aria-label="breadcrumb">
-        <ul>
-            <li><a th:href="@{/view/admin/dorms/buildings}">妤兼爧绠＄悊</a></li>
-            <li><a th:href="@{/view/admin/dorms/rooms}">鎴块棿绠＄悊</a></li>
-            <li>鎴块棿璇︽儏</li>
-        </ul>
-    </nav>
+    <div th:replace="~{admin/dorm/_dorm-nav :: subnav(activeTab='rooms')}"></div>
 
     <div style="display: flex; justify-content: space-between; align-items: center;">
         <hgroup style="margin-bottom: 0;">
@@ -3687,9 +4211,21 @@ logging:
                     <tr th:each="bed : ${beds}">
                         <td th:text="${bed.bedNumber()} + ' 鍙峰簥'">1 鍙峰簥</td>
                         <td style="text-align: right;">
-                            <form th:action="@{/view/admin/dorms/beds/{bedId}/delete(bedId=${bed.id()})}" method="post" style="display: inline;" onsubmit="return confirm('纭畾瑕佸垹闄?' + [[${bed.bedNumber()}]] + ' 鍙峰簥鍚楋紵');">
+                            <form th:id="'deleteForm-' + ${bed.id()}" th:action="@{/view/admin/dorms/beds/{bedId}/delete(bedId=${bed.id()})}" method="post" style="display: inline;">
                                 <input type="hidden" name="roomId" th:value="${room.id()}"/>
-                                <button type="submit" class="contrast outline" style="padding: 0.25rem 0.5rem; font-size: 0.875rem;">鍒犻櫎</button>
+
+                                <!--
+                                    鍏抽敭淇:
+                                    1. 鎴戜滑灏嗙‘璁ら€昏緫绉诲埌浜?<button> 鐨?th:onclick 浜嬩欢涓€?
+                                    2. 浣跨敤 |...| 绗﹀彿杩涜瀛楃涓叉嫾鎺ワ紝杩欐槸Thymeleaf鐨勫瓧闈㈤噺鏇挎崲(Literal Substitution)銆?
+                                    3. 浣跨敤 [[...]] 杩涜JavaScript鍐呰仈锛岀‘淇濆彉閲忚姝ｇ‘娓叉煋涓篔S浠ｇ爜鐨勪竴閮ㄥ垎銆?
+                                    4. onclick 杩斿洖 false 鏃讹紝灏嗛樆姝㈣〃鍗曠殑榛樿鎻愪氦琛屼负銆?
+                                -->
+                                <button type="button"
+                                        th:onclick="|if(confirm('纭畾瑕佸垹闄?' + [[${bed.bedNumber()}]] + ' 鍙峰簥鍚楋紵')) document.getElementById('deleteForm-' + [[${bed.id()}]].toString()).submit();|"
+                                        class="contrast outline" style="padding: 0.25rem 0.5rem; font-size: 0.875rem;">
+                                    鍒犻櫎
+                                </button>
                             </form>
                         </td>
                     </tr>
@@ -3794,12 +4330,7 @@ logging:
 </head>
 <body>
 <section layout:fragment="content">
-    <nav aria-label="breadcrumb">
-        <ul>
-            <li><a th:href="@{/view/admin/dorms/buildings}">妤兼爧绠＄悊</a></li>
-            <li>鎴块棿绠＄悊</li>
-        </ul>
-    </nav>
+    <div th:replace="~{admin/dorm/_dorm-nav :: subnav(activeTab='rooms')}"></div>
 
     <div style="display: flex; justify-content: space-between; align-items: center;">
         <hgroup style="margin-bottom: 0;">
@@ -3865,6 +4396,32 @@ logging:
 </body>
 </html>
 ----------
+.\src\main\resources\templates\admin\dorm\_dorm-nav.html:
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<body>
+
+<!-- 杩欎釜鐗囨灏嗚鍖呭惈鍦ㄦ墍鏈夊鑸嶈祫婧愮鐞嗙殑椤甸潰涓?-->
+<nav th:fragment="subnav(activeTab)" aria-label="breadcrumb">
+    <ul>
+        <li>
+            <a th:href="@{/view/admin/dorms/buildings}"
+               th:aria-current="${activeTab == 'buildings' ? 'page' : null}">
+                妤兼爧绠＄悊
+            </a>
+        </li>
+        <li>
+            <a th:href="@{/view/admin/dorms/rooms}"
+               th:aria-current="${activeTab == 'rooms' ? 'page' : null}">
+                鎴块棿绠＄悊
+            </a>
+        </li>
+    </ul>
+</nav>
+
+</body>
+</html>
+----------
 .\src\main\resources\templates\student\dashboard.html:
 <!DOCTYPE html>
 <html lang="zh-CN"
@@ -3914,6 +4471,112 @@ logging:
 
 </body>
 </html>
+----------
+.\src\test\java\com\smartdorm\backend\controller\AdminCycleViewControllerTest.java:
+// src/test/java/com/smartdorm/backend/controller/AdminCycleViewControllerTest.java
+package com.smartdorm.backend.controller;
+
+import com.smartdorm.backend.dto.CycleDtos;
+import com.smartdorm.backend.service.CycleManagementService;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.web.servlet.MockMvc;
+
+import java.time.Instant;
+import java.util.Collections;
+import java.util.List;
+import java.util.UUID;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+@SpringBootTest
+@AutoConfigureMockMvc
+@DisplayName("TDD for AdminCycleViewController")
+@WithMockUser(roles = "ADMIN") // Apply to all tests in this class
+public class AdminCycleViewControllerTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @MockBean
+    private CycleManagementService cycleService;
+
+    @Test
+    @DisplayName("GET /view/admin/cycles - Should return list of cycles")
+    void whenListCycles_thenReturnsListView() throws Exception {
+        when(cycleService.getAllCycles()).thenReturn(Collections.emptyList());
+
+        mockMvc.perform(get("/view/admin/cycles"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("admin/cycle/cycles-list"))
+                .andExpect(model().attributeExists("cycles"));
+    }
+
+    @Test
+    @DisplayName("POST /view/admin/cycles/create - Should create cycle and redirect")
+    void whenCreateCycle_thenRedirects() throws Exception {
+        CycleDtos.MatchingCycleCreateDto createDto = new CycleDtos.MatchingCycleCreateDto("Test Cycle", Instant.now(), Instant.now());
+        when(cycleService.createCycle(any())).thenReturn(new CycleDtos.MatchingCycleDto(UUID.randomUUID(), "Test Cycle", null, null, "DRAFT"));
+
+        mockMvc.perform(post("/view/admin/cycles/create")
+                        .flashAttr("cycleDto", createDto)
+                        .with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/view/admin/cycles"))
+                .andExpect(flash().attributeExists("successMessage"));
+
+        verify(cycleService, times(1)).createCycle(any(CycleDtos.MatchingCycleCreateDto.class));
+    }
+
+    @Test
+    @DisplayName("GET /view/admin/cycles/{id}/dimensions - Should return dimensions list for a cycle")
+    void whenListDimensions_thenReturnsDimensionsView() throws Exception {
+        UUID cycleId = UUID.randomUUID();
+        CycleDtos.MatchingCycleDto mockCycle = new CycleDtos.MatchingCycleDto(cycleId, "Test Cycle", null, null, "DRAFT");
+        List<CycleDtos.SurveyDimensionDto> mockDimensions = Collections.emptyList();
+
+        when(cycleService.getCycleById(cycleId)).thenReturn(mockCycle);
+        when(cycleService.getDimensionsForCycle(cycleId)).thenReturn(mockDimensions);
+
+        mockMvc.perform(get("/view/admin/cycles/" + cycleId + "/dimensions"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("admin/cycle/dimensions-list"))
+                .andExpect(model().attribute("cycle", mockCycle))
+                .andExpect(model().attribute("dimensions", mockDimensions));
+    }
+
+    @Test
+    @DisplayName("POST /view/admin/cycles/{id}/dimensions/create - Should create dimension and redirect")
+    void whenCreateDimension_thenRedirectsToDimensionsList() throws Exception {
+        UUID cycleId = UUID.randomUUID();
+        CycleDtos.SurveyDimensionCreateDto createDto = new CycleDtos.SurveyDimensionCreateDto(
+                "rest_habit", "Your rest habit?", "SOFT_FACTOR", "SINGLE_CHOICE",
+                1.0, null, false, List.of(new CycleDtos.OptionCreateDto("Early Bird", 1.0))
+        );
+
+        when(cycleService.createDimensionForCycle(eq(cycleId), any())).thenReturn(mock(CycleDtos.SurveyDimensionDto.class));
+
+        mockMvc.perform(post("/view/admin/cycles/" + cycleId + "/dimensions/create")
+                        .flashAttr("dimensionDto", createDto)
+                        .with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/view/admin/cycles/" + cycleId + "/dimensions"))
+                .andExpect(flash().attributeExists("successMessage"));
+
+        verify(cycleService, times(1)).createDimensionForCycle(eq(cycleId), any(CycleDtos.SurveyDimensionCreateDto.class));
+    }
+}
 ----------
 .\src\test\java\com\smartdorm\backend\controller\AdminDormViewControllerTest.java:
 package com.smartdorm.backend.controller;
@@ -4011,17 +4674,24 @@ public class AdminDormViewControllerTest {
     // --- Room Tests ---
 
     @Test
-    @DisplayName("绠＄悊鍛樿幏鍙栨埧闂村垪琛ㄩ〉闈㈠簲鎴愬姛")
-    @WithMockUser(username = "admin", roles = "ADMIN")
-    void whenListRooms_thenReturnsListView() throws Exception {
-        when(dormResourceService.getRoomDetails()).thenReturn(Collections.emptyList());
-        when(dormResourceService.getAllBuildings()).thenReturn(Collections.emptyList());
+    @DisplayName("绠＄悊鍛樿幏鍙栨埧闂磋鎯呬笌搴婁綅鍒楄〃椤甸潰搴旀垚鍔?)
+    @WithMockUser(roles = "ADMIN")
+    void whenShowRoomDetails_thenReturnsDetailsView() throws Exception {
+        UUID roomId = UUID.randomUUID();
+        DormResourceService.RoomDetailDto mockRoomDetails = new DormResourceService.RoomDetailDto(roomId, "101", 4, "MALE", UUID.randomUUID(), "Test Building");
 
-        mockMvc.perform(get("/view/admin/dorms/rooms"))
+        // 鍏抽敭淇: 纭繚鎴戜滑 mock 鐨勬槸 Controller 瀹為檯璋冪敤鐨?getRoomDetailById 鏂规硶
+        when(dormResourceService.getRoomDetailById(roomId)).thenReturn(mockRoomDetails);
+
+        // 杩欎釜 mock 淇濇寔涓嶅彉锛屾槸姝ｇ‘鐨?
+        when(dormResourceService.getBedsForRoom(roomId)).thenReturn(Collections.emptyList());
+
+        mockMvc.perform(get("/view/admin/dorms/rooms/" + roomId + "/details"))
                 .andExpect(status().isOk())
-                .andExpect(view().name("admin/dorm/rooms-list"))
-                .andExpect(model().attributeExists("roomDetails"))
-                .andExpect(model().attributeExists("buildings"));
+                .andExpect(view().name("admin/dorm/room-details"))
+                .andExpect(model().attributeExists("room"))
+                .andExpect(model().attribute("room", mockRoomDetails)) // 鎴戜滑鍙互鏇磋繘涓€姝ワ紝楠岃瘉 model 閲岀殑瀵硅薄灏辨槸鎴戜滑 mock 鐨勯偅涓?
+                .andExpect(model().attributeExists("beds"));
     }
 
     @Test
@@ -4045,22 +4715,6 @@ public class AdminDormViewControllerTest {
         verify(dormResourceService, times(1)).createRoom(any(DormDtos.RoomCreateUpdateDto.class));
     }
 
-    @Test
-    @DisplayName("绠＄悊鍛樿幏鍙栨埧闂磋鎯呬笌搴婁綅鍒楄〃椤甸潰搴旀垚鍔?)
-    @WithMockUser(roles = "ADMIN")
-    void whenShowRoomDetails_thenReturnsDetailsView() throws Exception {
-        UUID roomId = UUID.randomUUID();
-        DormResourceService.RoomDetailDto mockRoomDetails = new DormResourceService.RoomDetailDto(roomId, "101", 4, "MALE", UUID.randomUUID(), "Test Building");
-
-        when(dormResourceService.getRoomDetails()).thenReturn(List.of(mockRoomDetails));
-        when(dormResourceService.getBedsForRoom(roomId)).thenReturn(Collections.emptyList());
-
-        mockMvc.perform(get("/view/admin/dorms/rooms/" + roomId + "/details"))
-                .andExpect(status().isOk())
-                .andExpect(view().name("admin/dorm/room-details"))
-                .andExpect(model().attributeExists("room"))
-                .andExpect(model().attributeExists("beds"));
-    }
 
     @Test
     @DisplayName("绠＄悊鍛樻壒閲忓垱寤哄簥浣嶅簲鎴愬姛骞堕噸瀹氬悜鍥炶鎯呴〉")

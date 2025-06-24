@@ -84,20 +84,21 @@ public class CycleManagementService {
 
         SurveyDimension dimension = new SurveyDimension();
         dimension.setCycle(cycle);
-        dimension.setDimensionKey(dto.dimensionKey());
-        dimension.setPrompt(dto.prompt());
-        dimension.setDimensionType(dto.dimensionType());
-        dimension.setResponseType(dto.responseType());
-        dimension.setWeight(dto.weight());
-        dimension.setParentDimensionKey(dto.parentDimensionKey());
+        dimension.setDimensionKey(dto.getDimensionKey());
+        dimension.setPrompt(dto.getPrompt());
+        dimension.setDimensionType(dto.getDimensionType());
+        dimension.setResponseType(dto.getResponseType());
+        dimension.setWeight(dto.getWeight());
+        dimension.setParentDimensionKey(dto.getParentDimensionKey());
         dimension.setReverseScored(dto.isReverseScored());
 
-        if (dto.options() != null) {
-            List<DimensionOption> options = dto.options().stream().map(optDto -> {
+        if (dto.getOptions() != null) {
+            List<DimensionOption> options = dto.getOptions().stream().map(optDto -> {
                 DimensionOption option = new DimensionOption();
-                option.setOptionText(optDto.optionText());
-                option.setOptionValue(optDto.optionValue());
-                option.setDimension(dimension); // Link back to parent
+                // [修复] 使用 .getOptionText() 和 .getOptionValue()
+                option.setOptionText(optDto.getOptionText());
+                option.setOptionValue(optDto.getOptionValue());
+                option.setDimension(dimension);
                 return option;
             }).collect(Collectors.toList());
             dimension.getOptions().addAll(options);
@@ -105,6 +106,8 @@ public class CycleManagementService {
 
         return cycleMapper.toDto(dimensionRepository.save(dimension));
     }
+
+
 
     public List<SurveyDimensionDto> getDimensionsForCycle(UUID cycleId) {
         if (!cycleRepository.existsById(cycleId)) {
@@ -121,7 +124,8 @@ public class CycleManagementService {
 
         dimension.setPrompt(dto.prompt());
         dimension.setWeight(dto.weight());
-        dimension.setReverseScored(dto.isReverseScored());
+        // [关键修改] record 的访问器就是字段名
+        dimension.setReverseScored(dto.reverseScored());
 
         return cycleMapper.toDto(dimensionRepository.save(dimension));
     }

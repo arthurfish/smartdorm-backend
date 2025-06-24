@@ -159,8 +159,14 @@ public class FullLifecycleIntegrationTest {
                 new OptionCreateDto("偶尔熬夜 (12点-1点)", 3.0),
                 new OptionCreateDto("夜猫子 (1点后)", 5.0)
         );
-        SurveyDimensionCreateDto dimensionCreateDto = new SurveyDimensionCreateDto(
-                "rest_habit", "你的作息习惯是？", "SOFT_FACTOR", "SINGLE_CHOICE", 1.5, null, false, options);
+        SurveyDimensionCreateDto dimensionCreateDto = new SurveyDimensionCreateDto();
+        dimensionCreateDto.setDimensionKey("rest_habit");
+        dimensionCreateDto.setPrompt("你的作息习惯是？");
+        dimensionCreateDto.setDimensionType("SOFT_FACTOR");
+        dimensionCreateDto.setResponseType("SINGLE_CHOICE");
+        dimensionCreateDto.setWeight(1.5);
+        dimensionCreateDto.setReverseScored(false);
+        dimensionCreateDto.setOptions(options);
         MvcResult dimensionResult = mockMvc.perform(post("/api/admin/cycles/" + cycleId + "/dimensions")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)

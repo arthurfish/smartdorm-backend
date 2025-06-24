@@ -1,0 +1,96 @@
+<!-- src/main/resources/templates/admin/cycle/dimension-form.html -->
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title th:text="${pageTitle}">维度表单</title>
+    <style>
+        .option-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 1rem;
+            align-items: end;
+        }
+    </style>
+</head>
+<body>
+<section layout:fragment="content">
+    <div th:replace="~{admin/cycle/_cycle-nav :: subnav(cycleId=${cycle.id()}, activeTab='dimensions')}"></div>
+    <hgroup>
+        <!-- [修改] 动态显示周期名称 -->
+        <h2 th:text="${pageTitle} + ' for ' + ${cycle.name()}">新建问卷维度</h2>
+        <h3>设计一个问卷问题，包括其类型、权重和选项。</h3>
+    </hgroup>
+
+    <article>
+        <!-- 表单 action 中的 cycleId 应该用 cycle.id() -->
+        <form th:action="@{/view/admin/cycles/{id}/dimensions/create(id=${cycle.id()})}"
+              th:object="${dimensionDto}"
+              method="post">
+
+            <!-- 其他表单内容保持不变... -->
+            <div class="grid">
+                <label for="prompt">
+                    问题/提示语
+                    <input type="text" id="prompt" th:field="*{prompt}" placeholder="例如：你的作息习惯是？" required
+                           th:aria-invalid="${#fields.hasErrors('prompt')} ? 'true' : 'false'">
+                    <small th:if="${#fields.hasErrors('prompt')}" th:errors="*{prompt}" class="error"></small>
+                </label>
+                <label for="dimensionKey">
+                    唯一标识 (Key)
+                    <input type="text" id="dimensionKey" th:field="*{dimensionKey}" placeholder="例如：rest_habit" required
+                           th:aria-invalid="${#fields.hasErrors('dimensionKey')} ? 'true' : 'false'">
+                    <small th:if="${#fields.hasErrors('dimensionKey')}" th:errors="*{dimensionKey}" class="error"></small>
+                </label>
+            </div>
+
+            <div class="grid">
+                <label for="dimensionType">
+                    维度用途
+                    <select id="dimensionType" th:field="*{dimensionType}">
+                        <option value="SOFT_FACTOR">软性匹配因子 (用于计算相似度)</option>
+                        <option value="HARD_FILTER">硬性筛选条件 (用于分组)</option>
+                    </select>
+                </label>
+                <label for="responseType">
+                    回答类型
+                    <select id="responseType" th:field="*{responseType}">
+                        <option value="SINGLE_CHOICE">单选</option>
+                        <option value="SCALE">量表 (1-5分)</option>
+                        <option value="COMPOSITE" disabled>复合维度 (暂不支持)</option>
+                    </select>
+                </label>
+                <label for="weight">
+                    权重
+                    <input type="number" step="0.1" id="weight" th:field="*{weight}" required>
+                </label>
+            </div>
+
+            <hr>
+            <h5>问题选项设置 (请至少填写前两个)</h5>
+            <div th:each="option, iterStat : *{options}" class="grid">
+                <label th:for="${'optionText' + iterStat.index}">
+                    选项 [[${iterStat.count}]] 描述
+                    <input type="text" th:id="${'optionText' + iterStat.index}" th:field="*{options[__${iterStat.index}__].optionText}" placeholder="选项描述">
+                </label>
+                <label th:for="${'optionValue' + iterStat.index}">
+                    分值
+                    <input type="number" step="0.1" th:id="${'optionValue' + iterStat.index}" th:field="*{options[__${iterStat.index}__].optionValue}">
+                </label>
+            </div>
+            <small th:if="${#fields.hasGlobalErrors()}" th:errors="*{}" class="error"></small>
+            <small th:if="${#fields.hasErrors('options')}" th:errors="*{options}" class="error"></small>
+
+            <label for="reverseScored">
+                <input type="checkbox" id="reverseScored" th:field="*{reverseScored}">
+                是否反向计分 (选中后，高分表示负向)
+            </label>
+
+            <div class="grid">
+                <a th:href="@{/view/admin/cycles/{id}/dimensions(id=${cycle.id()})}" role="button" class="secondary outline">取消</a>
+                <button type="submit">创建维度</button>
+            </div>
+        </form>
+    </article>
+</section>
+</body>
+</html>

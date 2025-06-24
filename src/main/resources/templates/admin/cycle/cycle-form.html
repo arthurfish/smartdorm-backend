@@ -1,0 +1,56 @@
+<!-- src/main/resources/templates/admin/cycle/cycle-form.html -->
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:th="http://www.thymeleaf.org" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title th:text="${pageTitle}">周期表单</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <hgroup>
+        <h2 th:text="${pageTitle}">新建/编辑匹配周期</h2>
+        <h3>填写周期的基本信息。</h3>
+    </hgroup>
+
+    <article>
+        <!-- [关键修正] 修正了th:action的Thymeleaf表达式语法 -->
+        <form th:action="@{${cycleId == null ? '/view/admin/cycles/create' : '/view/admin/cycles/' + cycleId + '/update'}}"
+              th:object="${cycleDto}"
+              method="post">
+
+            <label for="name">
+                周期名称
+                <input type="text" id="name" th:field="*{name}" placeholder="例如：2024级新生秋季分配" required
+                       th:aria-invalid="${#fields.hasErrors('name')} ? 'true' : 'false'">
+                <small th:if="${#fields.hasErrors('name')}" th:errors="*{name}" class="error"></small>
+            </label>
+
+            <div class="grid">
+                <label for="startDate">
+                    开始日期 (选填)
+                    <!-- Thymeleaf期望日期格式为 yyyy-MM-dd -->
+                    <input type="date" id="startDate" th:field="*{startDate}">
+                </label>
+                <label for="endDate">
+                    结束日期 (选填)
+                    <input type="date" id="endDate" th:field="*{endDate}">
+                </label>
+            </div>
+
+            <label for="status" th:if="${cycleId != null}">
+                状态
+                <select id="status" th:field="*{status}">
+                    <option value="DRAFT">草稿 (DRAFT)</option>
+                    <option value="OPEN">开放 (OPEN)</option>
+                    <option value="COMPLETED">完成 (COMPLETED)</option>
+                </select>
+            </label>
+
+            <div class="grid">
+                <a th:href="@{/view/admin/cycles}" role="button" class="secondary outline">取消</a>
+                <button type="submit" th:text="${cycleId == null} ? '创建周期' : '保存更改'">提交</button>
+            </div>
+        </form>
+    </article>
+</section>
+</body>
+</html>

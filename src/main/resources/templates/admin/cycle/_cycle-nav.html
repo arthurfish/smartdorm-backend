@@ -1,0 +1,26 @@
+<!-- src/main/resources/templates/admin/cycle/_cycle-nav.html -->
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<body>
+<nav th:fragment="subnav(cycleId, activeTab)" aria-label="breadcrumb">
+    <ul>
+        <li>
+            <a th:href="@{/view/admin/cycles/{id}/dimensions(id=${cycleId})}"
+               th:aria-current="${activeTab == 'dimensions' ? 'page' : null}">
+                问卷维度管理
+            </a>
+        </li>
+        <li>
+            <a href="#" th:aria-current="${activeTab == 'results' ? 'page' : null}">
+                分配结果
+            </a>
+        </li>
+        <li>
+            <a href="#" th:aria-current="${activeTab == 'report' ? 'page' : null}">
+                质量报告
+            </a>
+        </li>
+    </ul>
+</nav>
+</body>
+</html>

@@ -1,10 +1,10 @@
+// src/test/java/com/smartdorm/backend/controller/CycleControllerIntegrationTest.java
 package com.smartdorm.backend.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartdorm.backend.dto.CycleDtos.*;
 import com.smartdorm.backend.dto.LoginRequest;
 import com.smartdorm.backend.dto.LoginResponse;
-import com.smartdorm.backend.entity.MatchingCycle;
 import com.smartdorm.backend.entity.User;
 import com.smartdorm.backend.repository.MatchingCycleRepository;
 import com.smartdorm.backend.repository.UserRepository;
@@ -105,13 +105,21 @@ class CycleControllerIntegrationTest {
         UUID cycleId = createdCycle.id();
 
         // 2. Add a dimension with options to the cycle
+        // [关键修复] 使用 setter 方法来构建 SurveyDimensionCreateDto 对象
         List<OptionCreateDto> options = List.of(
                 new OptionCreateDto("早睡早起", 1.0),
                 new OptionCreateDto("晚睡晚起", 5.0)
         );
-        SurveyDimensionCreateDto dimensionDto = new SurveyDimensionCreateDto(
-                "rest_habit", "你的作息习惯是？", "SOFT_FACTOR", "SINGLE_CHOICE", 2.0, null, false, options);
+        SurveyDimensionCreateDto dimensionDto = new SurveyDimensionCreateDto();
+        dimensionDto.setDimensionKey("rest_habit");
+        dimensionDto.setPrompt("你的作息习惯是？");
+        dimensionDto.setDimensionType("SOFT_FACTOR");
+        dimensionDto.setResponseType("SINGLE_CHOICE");
+        dimensionDto.setWeight(2.0);
+        dimensionDto.setReverseScored(false);
+        dimensionDto.setOptions(options);
 
+        // 发送请求
         mockMvc.perform(post("/api/admin/cycles/" + cycleId + "/dimensions")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -127,8 +135,7 @@ class CycleControllerIntegrationTest {
                 .andExpect(jsonPath("$", hasSize(1)))
                 .andExpect(jsonPath("$[0].prompt", is("你的作息习惯是？")));
 
-        // 4. Delete the cycle (should fail because status is not DRAFT)
-        // First, let's update status to OPEN
+        // 4. Update status to OPEN, then attempt to delete (should fail)
         MatchingCycleUpdateDto updateStatusDto = new MatchingCycleUpdateDto(null, null, null, "OPEN");
         mockMvc.perform(put("/api/admin/cycles/" + cycleId)
                         .header("Authorization", adminToken)
@@ -136,7 +143,6 @@ class CycleControllerIntegrationTest {
                         .content(objectMapper.writeValueAsString(updateStatusDto)))
                 .andExpect(status().isOk());
 
-        // Now, try to delete it
         mockMvc.perform(delete("/api/admin/cycles/" + cycleId).header("Authorization", adminToken))
                 .andExpect(status().isConflict());
 

@@ -1,0 +1,62 @@
+<!-- src/main/resources/templates/admin/cycle/cycles-list.html -->
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title>匹配周期管理</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <hgroup style="margin-bottom: 0;">
+            <h2>匹配周期管理</h2>
+            <h3>创建和管理所有宿舍分配周期。</h3>
+        </hgroup>
+        <a th:href="@{/view/admin/cycles/new}" role="button" style="margin-bottom: 1rem;">新建匹配周期</a>
+    </div>
+
+    <div th:if="${successMessage}" class="success" th:text="${successMessage}" style="margin-bottom: 1rem;"></div>
+    <div th:if="${errorMessage}" class="error" th:text="${errorMessage}" style="margin-bottom: 1rem;"></div>
+
+    <figure>
+        <table role="grid">
+            <thead>
+            <tr>
+                <th scope="col">周期名称</th>
+                <th scope="col">状态</th>
+                <th scope="col">开始日期</th>
+                <th scope="col">结束日期</th>
+                <th scope="col" style="text-align: right;">操作</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:if="${#lists.isEmpty(cycles)}">
+                <td colspan="5">暂无匹配周期，请先新建。</td>
+            </tr>
+            <tr th:each="cycle : ${cycles}">
+                <td th:text="${cycle.name()}">2024秋季新生</td>
+                <td>
+                    <span th:text="${cycle.status()}"
+                          th:classappend="${cycle.status() == 'OPEN'} ? 'success' : (${cycle.status() == 'COMPLETED'} ? 'contrast' : '')"
+                          style="padding: 0.2rem 0.5rem; border-radius: var(--pico-border-radius); font-weight: bold; font-size: 0.8em;"
+                          th:styleappend="${cycle.status() == 'OPEN'} ? 'background-color: var(--pico-form-element-valid-border-color); color: white;' : (${cycle.status() == 'COMPLETED'} ? 'background-color: var(--pico-color-indigo-600); color: white;' : 'background-color: var(--pico-muted-border-color);')">
+                    </span>
+                </td>
+                <td th:text="${cycle.startDate() != null} ? ${#temporals.format(cycle.startDate(), 'yyyy-MM-dd')} : '未设置'"></td>
+                <td th:text="${cycle.endDate() != null} ? ${#temporals.format(cycle.endDate(), 'yyyy-MM-dd')} : '未设置'"></td>
+                <td style="text-align: right;">
+                    <div role="group">
+                        <a th:href="@{/view/admin/cycles/{id}/dimensions(id=${cycle.id()})}" role="button">问卷管理</a>
+                        <a th:href="@{/view/admin/cycles/{id}/edit(id=${cycle.id()})}" role="button" class="secondary outline">编辑</a>
+                        <form th:action="@{/view/admin/cycles/{id}/delete(id=${cycle.id()})}" method="post" style="display: inline;" onsubmit="return confirm('确定要删除此周期吗？此操作不可恢复。');" th:if="${cycle.status() == 'DRAFT'}">
+                            <button type="submit" class="contrast outline">删除</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </figure>
+    <a th:href="@{/view/admin/dashboard}">← 返回主面板</a>
+</section>
+</body>
+</html>

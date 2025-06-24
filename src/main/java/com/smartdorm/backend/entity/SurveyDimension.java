@@ -16,14 +16,15 @@ import java.util.UUID;
 })
 public class SurveyDimension {
 
+    // ... 其他字段保持不变 ...
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "cycle_id", nullable = false)
-    @ToString.Exclude // Avoid circular dependency in toString
-    @EqualsAndHashCode.Exclude // Avoid circular dependency in equals/hashCode
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     private MatchingCycle cycle;
 
     @Column(name = "dimension_key", nullable = false, length = 100)
@@ -33,10 +34,10 @@ public class SurveyDimension {
     private String prompt;
 
     @Column(name = "dimension_type", nullable = false, length = 20)
-    private String dimensionType; // HARD_FILTER, SOFT_FACTOR
+    private String dimensionType;
 
     @Column(name = "response_type", nullable = false, length = 20)
-    private String responseType; // SCALE, SINGLE_CHOICE, COMPOSITE
+    private String responseType;
 
     @Column(nullable = false)
     private double weight = 1.0;
@@ -44,8 +45,10 @@ public class SurveyDimension {
     @Column(name = "parent_dimension_key", length = 100)
     private String parentDimensionKey;
 
-    @Column(name = "is_reverse_scored", nullable = false)
-    private boolean isReverseScored = false;
+    // [关键修改] 将字段名从 isReverseScored 改为 reverseScored
+    // JPA 和 Lombok 会将其映射到数据库的 is_reverse_scored 或 reverse_scored 列
+    @Column(name = "reverse_scored", nullable = false)
+    private boolean reverseScored = false;
 
     @OneToMany(mappedBy = "dimension", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     private List<DimensionOption> options = new ArrayList<>();

@@ -1,3 +1,4 @@
+<!-- src/main/resources/templates/admin/dashboard.html -->
 <!DOCTYPE html>
 <html lang="zh-CN"
       layout:decorate="~{layout}"
@@ -12,13 +13,14 @@
     <hgroup>
         <h2>管理员主面板</h2>
         <h3>欢迎您，<span sec:authentication="name">Admin</span>！在这里管理整个宿舍分配流程。</h3>
-
     </hgroup>
     <div class="grid">
         <article>
-            <h4><a href="#cycles" class="contrast">管理匹配周期</a></h4>
+            <!-- [修改] 添加了正确的 th:href -->
+            <h4><a th:href="@{/view/admin/cycles}" class="contrast">管理匹配周期</a></h4>
             <p>创建、查看、配置问卷和启动新的分配周期。</p>
-            <footer><a href="#cycles" role="button">前往管理</a></footer>
+            <!-- [修改] 添加了正确的 th:href -->
+            <footer><a th:href="@{/view/admin/cycles}" role="button">前往管理</a></footer>
         </article>
         <article>
             <h4><a th:href="@{/view/admin/dorms/buildings}" class="contrast">管理宿舍资源</a></h4>

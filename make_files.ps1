@@ -1,44 +1,73 @@
 <#
 .SYNOPSIS
-Creates blank files for the P5 support features in the project root directory.
-Does not overwrite existing files.
+    Creates the necessary empty files and directories for Phase 3 (Cycle & Dimension Management) of the SmartDorm project.
+.DESCRIPTION
+    This script will:
+    - Define a list of required file paths for Phase 3.
+    - Loop through each path.
+    - Automatically create the parent directory structure if it doesn't exist.
+    - Create a new, empty file if it doesn't already exist.
+    - Skip any file that already exists to prevent data loss.
+    - Provide clear output on what was created and what was skipped.
+.NOTES
+    Author: Your AI Assistant
+    Version: 1.0
+    Instructions: Run this script from the project root directory.
 #>
 
-# List of all files to create (relative to project root)
-$files = @(
-    "src/main/java/com/smartdorm/backend/entity/Feedback.java",
-    "src/main/java/com/smartdorm/backend/entity/SwapRequest.java",
-    "src/main/java/com/smartdorm/backend/entity/ContentArticle.java",
-    "src/main/java/com/smartdorm/backend/entity/Notification.java",
-    "src/main/java/com/smartdorm/backend/repository/FeedbackRepository.java",
-    "src/main/java/com/smartdorm/backend/repository/SwapRequestRepository.java",
-    "src/main/java/com/smartdorm/backend/repository/ContentArticleRepository.java",
-    "src/main/java/com/smartdorm/backend/repository/NotificationRepository.java",
-    "src/main/java/com/smartdorm/backend/dto/SupportDtos.java",
-    "src/main/java/com/smartdorm/backend/service/SupportService.java",
-    "src/main/java/com/smartdorm/backend/controller/StudentSupportController.java",
-    "src/main/java/com/smartdorm/backend/controller/AdminSupportController.java",
-    "src/test/java/com/smartdorm/backend/controller/SupportFeaturesIntegrationTest.java"
+# --- List of files to be created for Phase 3 ---
+$filesToCreate = @(
+    # Backend Controller & Test
+    "src/main/java/com/smartdorm/backend/controller/AdminCycleViewController.java",
+    "src/test/java/com/smartdorm/backend/controller/AdminCycleViewControllerTest.java",
+
+    # Frontend Thymeleaf Views
+    "src/main/resources/templates/admin/cycle/cycles-list.html",
+    "src/main/resources/templates/admin/cycle/cycle-form.html",
+    "src/main/resources/templates/admin/cycle/dimensions-list.html",
+    "src/main/resources/templates/admin/cycle/dimension-form.html",
+    "src/main/resources/templates/admin/cycle/_cycle-nav.html"
 )
 
-# Process each file
-foreach ($file in $files) {
-    # Get parent directory path
+Write-Host "Starting Phase 3 file creation..." -ForegroundColor Cyan
+Write-Host "------------------------------------"
+
+# --- Main logic to process each file ---
+foreach ($file in $filesToCreate) {
+    # Get the parent directory of the file
     $directory = Split-Path -Path $file -Parent
 
-    # Create directory if it doesn't exist
+    # Check if the directory exists, if not, create it
     if (-not (Test-Path -Path $directory -PathType Container)) {
-        New-Item -Path $directory -ItemType Directory -Force | Out-Null
-        Write-Host "Created directory: $directory"
+        try {
+            New-Item -Path $directory -ItemType Directory -Force -ErrorAction Stop | Out-Null
+            Write-Host "Created directory:" -ForegroundColor Green -NoNewline
+            Write-Host " $directory"
+        }
+        catch {
+            Write-Host "Error creating directory $directory`: $_" -ForegroundColor Red
+            # Stop processing if a directory cannot be created
+            break
+        }
     }
 
-    # Create file if it doesn't exist
+    # Check if the file exists, if not, create it as an empty file
     if (-not (Test-Path -Path $file -PathType Leaf)) {
-        New-Item -Path $file -ItemType File | Out-Null
-        Write-Host "Created file: $file"
-    } else {
-        Write-Host "Skipped existing file: $file"
+        try {
+            New-Item -Path $file -ItemType File -ErrorAction Stop | Out-Null
+            Write-Host "Created file:     " -ForegroundColor Green -NoNewline
+            Write-Host " $file"
+        }
+        catch {
+            Write-Host "Error creating file $file`: $_" -ForegroundColor Red
+        }
+    }
+    else {
+        # If the file already exists, skip it and notify the user
+        Write-Host "Skipped existing: " -ForegroundColor Yellow -NoNewline
+        Write-Host " $file"
     }
 }
 
-Write-Host "`nFile creation completed. Check the output for details."
+Write-Host "------------------------------------"
+Write-Host "Script finished. All required files for Phase 3 should now exist." -ForegroundColor Cyan

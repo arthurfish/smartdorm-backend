@@ -1,8 +1,7 @@
-// src/test/java/com/smartdorm/backend/controller/FullSystemFlowIntegrationTest.java
+// src/test/java/com/smartdorm/backend/controller/SecondFullSystemFlowIntegrationTest.java
 package com.smartdorm.backend.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.smartdorm.backend.dto.AdminDtos;
 import com.smartdorm.backend.dto.CycleDtos.*;
 import com.smartdorm.backend.dto.DormDtos.*;
 import com.smartdorm.backend.dto.LoginRequest;
@@ -12,7 +11,6 @@ import com.smartdorm.backend.dto.SupportDtos;
 import com.smartdorm.backend.entity.*;
 import com.smartdorm.backend.repository.*;
 import jakarta.transaction.Transactional;
-import org.antlr.v4.runtime.misc.LogManager;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -165,6 +163,7 @@ public class SecondFullSystemFlowIntegrationTest {
     @Order(2)
     @DisplayName("步骤2 [ADM-01, ADM-02]: 管理员创建分配周期并设计问卷")
     void step2_AdminCreatesCycleAndDesignsSurvey() throws Exception {
+        // 创建分配周期
         MatchingCycleCreateDto createCycleDto = new MatchingCycleCreateDto("2024级计算机学院新生分配", Instant.now(), Instant.now().plusSeconds(86400 * 7));
         MvcResult cycleResult = mockMvc.perform(post("/api/admin/cycles")
                         .header("Authorization", adminToken)
@@ -175,15 +174,54 @@ public class SecondFullSystemFlowIntegrationTest {
         this.cycleId = objectMapper.readValue(cycleResult.getResponse().getContentAsString(), MatchingCycleDto.class).id();
         assertNotNull(this.cycleId);
 
-        List<OptionCreateDto> cleanlinessOptions = List.of(new OptionCreateDto("每日打扫", 1.0), new OptionCreateDto("每周打扫", 3.0), new OptionCreateDto("有空再打扫", 5.0));
-        SurveyDimensionCreateDto cleanlinessDim = new SurveyDimensionCreateDto("cleanliness", "你对宿舍的整洁度要求是？", "SOFT_FACTOR", "SINGLE_CHOICE", 1.5, null, false, cleanlinessOptions);
-        MvcResult dim1Result = mockMvc.perform(post("/api/admin/cycles/" + this.cycleId + "/dimensions").header("Authorization", adminToken).contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(cleanlinessDim))).andExpect(status().isCreated()).andReturn();
+        // --- [关键修复] 创建第一个维度 ---
+        // 1. 创建选项列表
+        List<OptionCreateDto> cleanlinessOptions = List.of(
+                new OptionCreateDto("每日打扫", 1.0),
+                new OptionCreateDto("每周打扫", 3.0),
+                new OptionCreateDto("有空再打扫", 5.0)
+        );
+        // 2. 使用默认构造函数创建 DTO
+        SurveyDimensionCreateDto cleanlinessDim = new SurveyDimensionCreateDto();
+        // 3. 使用 setter 方法填充数据
+        cleanlinessDim.setDimensionKey("cleanliness");
+        cleanlinessDim.setPrompt("你对宿舍的整洁度要求是？");
+        cleanlinessDim.setDimensionType("SOFT_FACTOR");
+        cleanlinessDim.setResponseType("SINGLE_CHOICE");
+        cleanlinessDim.setWeight(1.5);
+        cleanlinessDim.setReverseScored(false);
+        cleanlinessDim.setOptions(cleanlinessOptions);
+
+        // 4. 发送请求
+        MvcResult dim1Result = mockMvc.perform(post("/api/admin/cycles/" + this.cycleId + "/dimensions")
+                        .header("Authorization", adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(cleanlinessDim)))
+                .andExpect(status().isCreated())
+                .andReturn();
         this.cleanlinessDimensionId = objectMapper.readValue(dim1Result.getResponse().getContentAsString(), SurveyDimensionDto.class).id();
         assertNotNull(this.cleanlinessDimensionId);
 
-        List<OptionCreateDto> atmosphereOptions = List.of(new OptionCreateDto("希望安静学习", 1.0), new OptionCreateDto("希望热闹活跃", 2.0));
-        SurveyDimensionCreateDto atmosphereDim = new SurveyDimensionCreateDto("atmosphere", "你期望的宿舍氛围是？", "HARD_FILTER", "SINGLE_CHOICE", 1.0, null, false, atmosphereOptions);
-        MvcResult dim2Result = mockMvc.perform(post("/api/admin/cycles/" + this.cycleId + "/dimensions").header("Authorization", adminToken).contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(atmosphereDim))).andExpect(status().isCreated()).andReturn();
+        // --- [关键修复] 创建第二个维度 ---
+        List<OptionCreateDto> atmosphereOptions = List.of(
+                new OptionCreateDto("希望安静学习", 1.0),
+                new OptionCreateDto("希望热闹活跃", 2.0)
+        );
+        SurveyDimensionCreateDto atmosphereDim = new SurveyDimensionCreateDto();
+        atmosphereDim.setDimensionKey("atmosphere");
+        atmosphereDim.setPrompt("你期望的宿舍氛围是？");
+        atmosphereDim.setDimensionType("HARD_FILTER");
+        atmosphereDim.setResponseType("SINGLE_CHOICE");
+        atmosphereDim.setWeight(1.0);
+        atmosphereDim.setReverseScored(false);
+        atmosphereDim.setOptions(atmosphereOptions);
+
+        MvcResult dim2Result = mockMvc.perform(post("/api/admin/cycles/" + this.cycleId + "/dimensions")
+                        .header("Authorization", adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(atmosphereDim)))
+                .andExpect(status().isCreated())
+                .andReturn();
         this.atmosphereDimensionId = objectMapper.readValue(dim2Result.getResponse().getContentAsString(), SurveyDimensionDto.class).id();
         assertNotNull(this.atmosphereDimensionId);
     }

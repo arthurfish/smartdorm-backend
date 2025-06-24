@@ -42,8 +42,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class) // 关键：按顺序执行测试方法
 public class FullSystemFlowIntegrationTest {
 
+    @Container
     private static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-alpine");
-    // 2. 添加 static 初始化块来手动启动容器
+
     static {
         postgres.start();
     }
@@ -60,10 +61,6 @@ public class FullSystemFlowIntegrationTest {
     @Autowired private BedRepository bedRepository;
     @Autowired private MatchingResultRepository resultRepository;
     @Autowired private UserResponseRepository responseRepository;
-    // Add other repositories as needed for new entities
-    // @Autowired private FeedbackRepository feedbackRepository;
-    // @Autowired private SwapRequestRepository swapRequestRepository;
-    // @Autowired private ArticleRepository articleRepository;
 
     // State passed between ordered tests
     private String adminToken;
@@ -85,7 +82,7 @@ public class FullSystemFlowIntegrationTest {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("spring.jpa.hibernate.ddl-auto", () -> "create"); // create-drop ensures clean state for each run
+        registry.add("spring.jpa.hibernate.ddl-auto", () -> "create");
     }
 
     @BeforeAll
@@ -179,12 +176,21 @@ public class FullSystemFlowIntegrationTest {
         assertNotNull(this.cycleId);
 
         // 2. Add a 'SOFT_FACTOR' dimension
+        // [关键修复] 使用 setter 方法构建 DTO
         List<OptionCreateDto> cleanlinessOptions = List.of(
                 new OptionCreateDto("每天打扫", 1.0),
                 new OptionCreateDto("每周打扫", 3.0),
                 new OptionCreateDto("有空再打扫", 5.0)
         );
-        SurveyDimensionCreateDto cleanlinessDim = new SurveyDimensionCreateDto("cleanliness", "你对宿舍的整洁度要求是？", "SOFT_FACTOR", "SINGLE_CHOICE", 1.5, null, false, cleanlinessOptions);
+        SurveyDimensionCreateDto cleanlinessDim = new SurveyDimensionCreateDto();
+        cleanlinessDim.setDimensionKey("cleanliness");
+        cleanlinessDim.setPrompt("你对宿舍的整洁度要求是？");
+        cleanlinessDim.setDimensionType("SOFT_FACTOR");
+        cleanlinessDim.setResponseType("SINGLE_CHOICE");
+        cleanlinessDim.setWeight(1.5);
+        cleanlinessDim.setReverseScored(false);
+        cleanlinessDim.setOptions(cleanlinessOptions);
+
         MvcResult dim1Result = mockMvc.perform(post("/api/admin/cycles/" + this.cycleId + "/dimensions")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -195,11 +201,20 @@ public class FullSystemFlowIntegrationTest {
         assertNotNull(this.cleanlinessDimensionId);
 
         // 3. Add a 'HARD_FILTER' dimension
+        // [关键修复] 使用 setter 方法构建 DTO
         List<OptionCreateDto> atmosphereOptions = List.of(
                 new OptionCreateDto("希望安静学习", 1.0),
                 new OptionCreateDto("希望热闹活跃", 2.0)
         );
-        SurveyDimensionCreateDto atmosphereDim = new SurveyDimensionCreateDto("atmosphere", "你期望的宿舍氛围是？", "HARD_FILTER", "SINGLE_CHOICE", 1.0, null, false, atmosphereOptions);
+        SurveyDimensionCreateDto atmosphereDim = new SurveyDimensionCreateDto();
+        atmosphereDim.setDimensionKey("atmosphere");
+        atmosphereDim.setPrompt("你期望的宿舍氛围是？");
+        atmosphereDim.setDimensionType("HARD_FILTER");
+        atmosphereDim.setResponseType("SINGLE_CHOICE");
+        atmosphereDim.setWeight(1.0);
+        atmosphereDim.setReverseScored(false);
+        atmosphereDim.setOptions(atmosphereOptions);
+
         MvcResult dim2Result = mockMvc.perform(post("/api/admin/cycles/" + this.cycleId + "/dimensions")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -262,18 +277,13 @@ public class FullSystemFlowIntegrationTest {
                 .andExpect(status().isAccepted());
 
         // *** MOCKING THE ALGORITHM'S RESULT ***
-        // In a real test against a running system, we might need to wait.
-        // Here, we manually create the results in the DB to test the downstream APIs.
         UUID groupId = UUID.randomUUID();
         createMatchingResult(cycleId, studentUser.getId(), bed1Id, groupId);
         createMatchingResult(cycleId, roommateUser.getId(), bed2Id, groupId);
 
-        // 2. Admin verifies the results (assuming this endpoint is now implemented)
-        // This is a placeholder test for an API defined in the spec but not yet in the provided code.
-        // The test serves as a driver for implementing this feature.
+        // 2. Admin verifies the results
         mockMvc.perform(get("/api/admin/cycles/" + cycleId + "/validate-results")
                         .header("Authorization", adminToken))
-                // For now, we expect a 200 OK with a basic success message, as logic is placeholder.
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isValid", is(true)));
     }
@@ -287,28 +297,32 @@ public class FullSystemFlowIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.assignment.building", is("紫荆公寓")))
                 .andExpect(jsonPath("$.assignment.room", is("401")))
-                .andExpect(jsonPath("$.assignment.bed", is(1))) // Bed number might vary, but for this mock, it's 1
+                .andExpect(jsonPath("$.assignment.bed", is(1)))
                 .andExpect(jsonPath("$.roommates", hasSize(1)))
                 .andExpect(jsonPath("$.roommates[0].name", is("李四")));
 
-        // 2. Student 1 submits feedback (placeholder for a new feature)
-        // FeedbackCreate feedbackDto = new FeedbackCreate(false, 5, "分配结果很满意，室友看起来不错！");
-        // mockMvc.perform(post("/api/student/feedback")
-        //                 .header("Authorization", studentToken)
-        //                 .contentType(MediaType.APPLICATION_JSON)
-        //                 .content(objectMapper.writeValueAsString(feedbackDto)))
-        //         .andExpect(status().isCreated());
+        // The following are placeholder tests for features not yet fully implemented.
+        // They are commented out but show the direction for future development.
+        /*
+        // 2. Student 1 submits feedback
+        FeedbackCreateDto feedbackDto = new FeedbackCreateDto(false, 5, "分配结果很满意，室友看起来不错！");
+        mockMvc.perform(post("/api/student/feedback")
+                        .header("Authorization", studentToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(feedbackDto)))
+                .andExpect(status().isCreated());
 
-        // 3. Student 1 submits a swap request (placeholder for a new feature)
-        // SwapRequestCreate swapDto = new SwapRequestCreate("感觉空调位置不太好，想换一个床位。");
-        // MvcResult swapResult = mockMvc.perform(post("/api/student/swap-requests")
-        //                 .header("Authorization", studentToken)
-        //                 .contentType(MediaType.APPLICATION_JSON)
-        //                 .content(objectMapper.writeValueAsString(swapDto)))
-        //         .andExpect(status().isCreated())
-        //         .andReturn();
-        // this.swapRequestId = objectMapper.readValue(swapResult.getResponse().getContentAsString(), SwapRequest.class).getId();
-        // assertNotNull(this.swapRequestId);
+        // 3. Student 1 submits a swap request
+        SwapRequestCreateDto swapDto = new SwapRequestCreateDto("感觉空调位置不太好，想换一个床位。");
+        MvcResult swapResult = mockMvc.perform(post("/api/student/swap-requests")
+                        .header("Authorization", studentToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(swapDto)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        this.swapRequestId = objectMapper.readValue(swapResult.getResponse().getContentAsString(), SwapRequestDto.class).id();
+        assertNotNull(this.swapRequestId);
+        */
     }
 
     @Test
@@ -316,23 +330,24 @@ public class FullSystemFlowIntegrationTest {
     @DisplayName("步骤6 [ADM-06, ADM-07]: 管理员处理申请并发布内容")
     void step6_AdminProcessesRequestsAndPublishesContent() throws Exception {
         // This whole step is a placeholder for new features defined in the spec.
-
+        /*
         // 1. Admin reviews and approves the swap request
-        // SwapRequestUpdate swapUpdateDto = new SwapRequestUpdate("APPROVED", "已与同学沟通，同意调换。");
-        // mockMvc.perform(put("/api/admin/swap-requests/" + this.swapRequestId + "/process")
-        //                 .header("Authorization", adminToken)
-        //                 .contentType(MediaType.APPLICATION_JSON)
-        //                 .content(objectMapper.writeValueAsString(swapUpdateDto)))
-        //         .andExpect(status().isOk())
-        //         .andExpect(jsonPath("$.status", is("APPROVED")));
+        SwapRequestUpdateDto swapUpdateDto = new SwapRequestUpdateDto("APPROVED", "已与同学沟通，同意调换。");
+        mockMvc.perform(put("/api/admin/swap-requests/" + this.swapRequestId + "/process")
+                        .header("Authorization", adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(swapUpdateDto)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("APPROVED")));
 
         // 2. Admin publishes a new article
-        // ArticleCreate articleDto = new ArticleCreate("宿舍文化建设小贴士", "...", "宿舍文化");
-        // mockMvc.perform(post("/api/admin/articles")
-        //                 .header("Authorization", adminToken)
-        //                 .contentType(MediaType.APPLICATION_JSON)
-        //                 .content(objectMapper.writeValueAsString(articleDto)))
-        //         .andExpect(status().isCreated());
+        ArticleCreateDto articleDto = new ArticleCreateDto("宿舍文化建设小贴士", "...", "宿舍文化");
+        mockMvc.perform(post("/api/admin/articles")
+                        .header("Authorization", adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(articleDto)))
+                .andExpect(status().isCreated());
+        */
     }
 
     @Test
@@ -340,17 +355,18 @@ public class FullSystemFlowIntegrationTest {
     @DisplayName("步骤7 [STU-05]: 学生查看支持内容和通知")
     void step7_StudentViewsContentAndNotifications() throws Exception {
         // This whole step is a placeholder for new features defined in the spec.
-
+        /*
         // 1. Student checks for new articles
-        // mockMvc.perform(get("/api/student/articles?category=宿舍文化").header("Authorization", studentToken))
-        //         .andExpect(status().isOk())
-        //         .andExpect(jsonPath("$", hasSize(1)))
-        //         .andExpect(jsonPath("$[0].title", is("宿舍文化建设小贴士")));
+        mockMvc.perform(get("/api/student/articles?category=宿舍文化").header("Authorization", studentToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].title", is("宿舍文化建设小贴士")));
 
         // 2. Student checks for notifications (e.g., about the approved swap request)
-        // mockMvc.perform(get("/api/student/notifications").header("Authorization", studentToken))
-        //         .andExpect(status().isOk())
-        //         .andExpect(jsonPath("$[0].message", containsString("您的调宿申请已被批准")));
+        mockMvc.perform(get("/api/student/notifications").header("Authorization", studentToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].message", containsString("您的调宿申请已被批准")));
+        */
     }
 
 
