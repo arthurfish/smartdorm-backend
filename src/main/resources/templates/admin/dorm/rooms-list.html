@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title>房间资源管理</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <div th:replace="~{admin/dorm/_dorm-nav :: subnav(activeTab='rooms')}"></div>
+
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <hgroup style="margin-bottom: 0;">
+            <h2>房间资源管理</h2>
+            <h3>管理所有楼栋内的房间信息。</h3>
+        </hgroup>
+        <a th:href="@{/view/admin/dorms/rooms/new}" role="button" style="margin-bottom: 1rem;">新建房间</a>
+    </div>
+
+    <!-- Success/Error Messages -->
+    <div th:if="${successMessage}" class="success" th:text="${successMessage}" style="margin-bottom: 1rem;"></div>
+    <div th:if="${errorMessage}" class="error" th:text="${errorMessage}" style="margin-bottom: 1rem;"></div>
+
+    <!-- Filter Form -->
+    <form th:action="@{/view/admin/dorms/rooms}" method="get" class="grid">
+        <select id="buildingId" name="buildingId" onchange="this.form.submit()">
+            <option value="">所有楼栋</option>
+            <option th:each="building : ${buildings}"
+                    th:value="${building.id()}"
+                    th:text="${building.name()}"
+                    th:selected="${building.id().equals(selectedBuildingId)}">
+            </option>
+        </select>
+        <a th:href="@{/view/admin/dorms/rooms}" role="button" class="secondary outline">清除筛选</a>
+    </form>
+
+
+    <figure>
+        <table role="grid">
+            <thead>
+            <tr>
+                <th scope="col">房间号</th>
+                <th scope="col">所属楼栋</th>
+                <th scope="col">容量</th>
+                <th scope="col">性别类型</th>
+                <th scope="col" style="text-align: right;">操作</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:if="${#lists.isEmpty(roomDetails)}">
+                <td colspan="5">暂无房间信息，或当前筛选条件下无结果。</td>
+            </tr>
+            <tr th:each="room : ${roomDetails}">
+                <td th:text="${room.roomNumber()}">101</td>
+                <td th:text="${room.buildingName()}">紫荆1号楼</td>
+                <td th:text="${room.capacity()}">4</td>
+                <td th:text="${room.genderType() == 'MALE' ? '男' : '女'}">男</td>
+                <td style="text-align: right;">
+                    <div role="group">
+                        <a th:href="@{/view/admin/dorms/rooms/{id}/details(id=${room.id()})}" role="button">床位管理</a>
+                        <a th:href="@{/view/admin/dorms/rooms/{id}/edit(id=${room.id()})}" role="button" class="secondary outline">编辑</a>
+                        <form th:action="@{/view/admin/dorms/rooms/{id}/delete(id=${room.id()})}" method="post" style="display: inline;" onsubmit="return confirm('确定要删除此房间吗？');">
+                            <button type="submit" class="contrast outline">删除</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </figure>
+    <a th:href="@{/view/admin/dashboard}">← 返回主面板</a>
+</section>
+</body>
+</html>

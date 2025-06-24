@@ -1,196 +1,250 @@
-好的，收到您的需求。目标非常明确：**在一天内，利用AI编码能力，完成智慧宿舍分配系统后端所有核心CRUD功能的开发和上线**。
+好的，收到你的需求。将前端从React切换到Thymeleaf是一个非常明智的决定，尤其是在单人、快速迭代的背景下。Thymeleaf与Spring Boot的深度集成可以极大地简化开发流程，而Pico.css则能让我们用最少的CSS代码实现优雅的Vercel简约风格。
 
-为了实现这个极具挑战性的目标，我将为您设计一个高度优化的、分阶段的、对AI执行极其友好的开发方案。该方案的核心思想是：
+这是一个为你量身定制的、以测试驱动（TDD）为核心的、AI协作式的Thymeleaf前端开发计划。
 
-1. **绝对的CRUD优先**：我们将暂时搁置复杂的异步匹配算法逻辑，用一个“占位符”（Placeholder）来模拟其流程，确保整个系统的API链路是通的。
-2. **依赖驱动的顺序**：开发顺序将严格按照功能依赖关系进行，先构建基础，再构建依赖于基础的上层功能。
-3. **原子化任务**：每个步骤都是一个独立的、可验证的模块。完成一步，就可以立即通过API工具（如Postman）进行测试，获得即时反馈。
-4. **AI友好指令**：整个方案将以清晰、明确的指令形式呈现，便于我（AI）直接理解并生成对应的代码。
+### **战略概述**
 
----
-
-## **“一日冲刺”后端开发方案**
-
-### **战略总览**
-
-我们将整个开发过程分为**6个核心阶段**。每个阶段聚焦于一组关联性极强的API，从最基础的环境搭建和用户认证开始，逐步扩展到宿舍资源、问卷管理、学生交互，最后完成支持性功能的框架。
-
-| 阶段 | 核心任务 | 预计耗时 (AI编码) | 可验证性 | 关键产出 |
-| --- | --- | --- | --- | --- |
-| **P0** | **项目初始化与环境配置** | 30分钟 | 应用程序成功启动，数据库连接正常 | 可运行的Spring Boot项目骨架, Docker Compose环境 |
-| **P1** | **用户与认证 (Auth)** | 1.5小时 | 用户可登录，受保护接口返回401/403，带Token可访问 | `User`实体, JWT安全配置, `/auth/login` |
-| **P2** | **宿舍资源管理 (Dorm Resources)** | 1.5小时 | 管理员可增删改查楼栋、房间、床位 | `DormBuilding`, `DormRoom`, `Bed` 相关的全套CRUD API |
-| **P3** | **匹配周期与问卷管理 (Cycles & Dimensions)** | 2小时 | 管理员可创建分配周期，并为其设计问卷维度和选项 | `MatchingCycle`, `SurveyDimension` 相关的全套CRUD API |
-| **P4** | **学生核心流程 (Survey & Results)** | 1.5小时 | 学生可获取问卷、提交答案、查看（模拟的）结果 | `UserResponse` 实体, 学生端问卷API, 结果查看API |
-| **P5** | **支持性功能 (Support & Content)** | 1小时 | 所有剩余的CRUD接口（如申请、文章、反馈）功能可用 | `SwapRequest`, `Article`, `Feedback` 等相关的全套CRUD API |
-| **P6** | **部署与最终验证** | 30分钟 | 应用打包成Docker镜像并通过Docker Compose成功运行 | `Dockerfile` 和完善的 `docker-compose.yml` |
-| **总计** | --- | **~8 小时** | --- | --- |
+1.  **技术栈确认**：后端（Spring Boot, JPA, Security）保持不变。前端采用 **Thymeleaf + Pico.css**。
+2.  **协作模式**：我们将采用**“你主导，我辅助”**的模式。
+    *   **你的任务**：编写或修改Spring MVC的`@Controller`方法和对应的测试用例（`MockMvc`）。
+    *   **我的任务**：根据你的Controller和数据模型（DTO），为你生成高质量的Thymeleaf模板代码和Pico.css应用建议。
+3.  **开发理念**：
+    *   **测试驱动 (TDD)**：对于每个页面或功能，我们先编写`MockMvc`测试，验证Controller能否返回正确的视图名和Model数据，然后再编写Thymeleaf模板。
+    *   **Vercel简约风格 (by Pico.css)**：我们将严格遵循Pico.css的规范，使用语义化的HTML标签（如`<article>`, `<nav>`, `<header>`, `<footer>`），让样式自动生效，最大限度减少手写CSS。
+    *   **分阶段、可交付**：我们将开发过程分解为多个逻辑阶段，每个阶段都有明确的交付物（可运行的页面），确保项目稳步推进。
 
 ---
 
-### **AI执行的具体步骤 (Step-by-Step Execution Plan)**
+### **Phase 0: 基础架构搭建 (Foundation Setup)**
 
-我将按照以下步骤为你执行编码工作。
+这是我们合作的第一步，确保开发环境就绪。
 
-### **阶段 0: 项目初始化与环境配置 (P0)**
+1.  **集成Pico.css**
+    *   **任务**：下载 `pico.min.css` 文件。
+    *   **存放位置**：将其放入 `src/main/resources/static/css/` 目录下。
+    *   你现有的`pico.min.css`文件已经存在，这一步已完成。
 
-1. **生成Spring Boot项目**:
-    - 使用 Spring Initializr 创建一个新项目。
-    - **依赖**: `Spring Web`, `Spring Data JPA`, `PostgreSQL Driver`, `Spring Security`, `Lombok`, `Validation`, `Java JWT` (for auth0).
-2. **配置 `application.yml`**:
-    - 设置数据库连接信息 (URL, username, password)，指向即将由Docker Compose启动的PostgreSQL服务。
-    - 配置JPA，如 `ddl-auto: update` (便于开发初期快速迭代) 和 `show-sql: true`。
-    - 配置JWT密钥 (`jwt.secret`) 和过期时间。
-3. **创建 `docker-compose.yml`**:
-    - 定义一个 `postgres` 服务，使用官方镜像，映射端口 `5432:5432`，并设置持久化卷和数据库凭据。
-    - 定义一个 `app` 服务（暂时不完整，后续补充Dockerfile）。
-4. **初始化数据库**:
-    - 启动 `docker-compose up -d postgres`。
-    - 连接到数据库，执行你提供的DDL脚本，创建所有表和扩展。
-5. **建立包结构**:
-    - 创建 `com.smartdorm.backend` 根包。
-    - 在其下创建 `config`, `controller`, `dto`, `entity`, `repository`, `service`, `security`, `exception` 等标准包。
+2.  **创建主布局模板 (Layout Template)**
+    *   **目的**：定义所有页面的通用头部、导航栏和页脚，实现页面复用。
+    *   你现有的 `src/main/resources/templates/layout.html` 是一个很好的起点。我们需要对其进行微调，以更好地支持Pico.css和动态内容。
+    *   **你的任务**：确认该布局文件存在。
+    *   **我已为你优化 `layout.html`**：
 
-**【可验证】**: 此时，我可以启动Spring Boot应用，它应该能无错误地连接到PostgreSQL数据库。
+    ```html
+    <!-- src/main/resources/templates/layout.html -->
+    <!DOCTYPE html>
+    <html lang="zh-CN"
+          xmlns:th="http://www.thymeleaf.org"
+          xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+          xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <!-- 页面标题将由具体页面定义 -->
+        <title layout:title-pattern="$CONTENT_TITLE - $LAYOUT_TITLE">智慧宿舍分配系统</title>
+        <link rel="stylesheet" th:href="@{/css/pico.min.css}">
+        <style>
+            /* 微调以更贴近Vercel风格 */
+            :root {
+                --pico-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+                --pico-block-spacing-vertical: 1.2rem;
+            }
+            main { min-height: 75vh; }
+            .error { color: var(--pico-form-element-invalid-border-color); }
+        </style>
+    </head>
+    <!-- 默认使用亮色主题 -->
+    <body data-theme="light">
+    
+        <header class="container">
+            <nav>
+                <ul>
+                    <li><strong>智慧宿舍分配系统</strong></li>
+                </ul>
+                <ul>
+                    <!-- 用户已登录时显示 -->
+                    <li sec:authorize="isAuthenticated()">
+                        <details role="list" dir="rtl">
+                            <summary aria-haspopup="listbox" role="button" class="secondary outline">
+                                <span sec:authentication="principal.username"></span>
+                            </summary>
+                            <ul role="listbox">
+                                <li>
+                                    <form th:action="@{/perform_logout}" method="post" style="margin: 0;">
+                                        <button type="submit" class="contrast" style="width:100%; text-align: right; margin: 0; padding: 0.5rem 1rem;">登出</button>
+                                    </form>
+                                </li>
+                            </ul>
+                        </details>
+                    </li>
+                </ul>
+            </nav>
+        </header>
+
+        <main class="container" layout:fragment="content">
+            <!-- 具体页面内容将替换这里 -->
+            <p>页面内容加载中...</p>
+        </main>
+
+        <footer class="container" style="text-align: center; margin-top: 2rem; padding: 1rem 0;">
+            <small>
+                &copy; 2024 智慧宿舍分配系统.
+                <a href="#" class="secondary">关于我们</a>
+                &middot;
+                <a href="#" class="secondary">联系支持</a>
+            </small>
+        </footer>
+
+    </body>
+    </html>
+    ```
+    *   **注意**：为了使用 `layout:fragment` 等功能，需要在 `pom.xml` 中添加 Thymeleaf 布局方言依赖：
+        ```xml
+        <dependency>
+            <groupId>nz.net.ultraq.thymeleaf</groupId>
+            <artifactId>thymeleaf-layout-dialect</artifactId>
+        </dependency>
+        ```
+
+3.  **调整Spring Security和MVC Controllers**
+    *   你现有的 `SecurityConfig.java` 中的 `formLoginFilterChain` 已经非常完美地适配了Thymeleaf的表单登录。
+    *   **核心转变**：我们需要创建新的 **`@Controller`** 类来处理页面路由和模型数据传递，而不是像之前那样完全依赖 `@RestController`。你已有的 `ViewController.java` 是个好例子。
+
+### **Phase 1: 认证与主面板 (Authentication & Dashboards)**
+
+**目标**：实现用户登录，并根据角色（管理员/学生）跳转到各自的主面板。
+
+1.  **登录页面 (Login Page)**
+    *   **用例**: STU-01
+    *   `login.html` 已存在。我们可以用Pico.css的美学思想优化它。
+    *   **你的任务**：确认 `ViewController.java` 中有返回 `login` 视图的方法。
+    *   **我将提供优化的 `login.html`**:
+
+    ```html
+    <!-- src/main/resources/templates/login.html -->
+    <!DOCTYPE html>
+    <html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>系统登录 - 智慧宿舍分配系统</title>
+        <link rel="stylesheet" th:href="@{/css/pico.min.css}">
+    </head>
+    <body>
+        <main class="container" style="max-width: 480px; margin-top: 10vh;">
+            <article>
+                <h2 style="text-align: center;">智慧宿舍系统登录</h2>
+                <form th:action="@{/perform_login}" method="post">
+                    <!-- 显示错误信息 -->
+                    <p th:if="${param.error}" class="error">学号或密码错误，请重试。</p>
+                    <p th:if="${param.logout}" style="color: var(--pico-color-green);">您已成功登出。</p>
+
+                    <label for="username">学号</label>
+                    <input type="text" id="username" name="username" placeholder="请输入学号/管理员账号" required autofocus>
+
+                    <label for="password">密码</label>
+                    <input type="password" id="password" name="password" placeholder="请输入密码" required>
+
+                    <button type="submit" style="width: 100%;">登录</button>
+                </form>
+            </article>
+        </main>
+    </body>
+    </html>
+    ```
+
+2.  **管理员和学生主面板 (Dashboards)**
+    *   **你的任务 (TDD)**:
+        1.  创建一个新的Controller，例如 `DashboardController.java`。
+        2.  在`DashboardControllerIntegrationTest.java`中编写测试，验证已认证的ADMIN用户访问 `/view/admin/dashboard` 时，返回 `admin/dashboard` 视图；已认证的STUDENT用户访问 `/view/student/dashboard` 时，返回 `student/dashboard` 视图。
+        3.  在 `DashboardController.java` 中实现这两个方法。
+
+    *   **我将提供对应的Thymeleaf模板**:
+
+    ```html
+    <!-- src/main/resources/templates/admin/dashboard.html -->
+    <html layout:decorate="~{layout}" lang="zh-CN">
+    <head><title>管理员主面板</title></head>
+    <body>
+        <section layout:fragment="content">
+            <hgroup>
+                <h2>管理员主面板</h2>
+                <h3>欢迎您，<span sec:authentication="principal.username">Admin</span>！在这里管理整个宿舍分配流程。</h3>
+            </hgroup>
+            <div class="grid">
+                <article>
+                    <h4>管理匹配周期</h4>
+                    <p>创建、查看和启动新的分配周期。</p>
+                    <footer><a href="#" role="button">前往管理</a></footer>
+                </article>
+                <article>
+                    <h4>管理宿舍资源</h4>
+                    <p>增删改查楼栋、房间和床位。</p>
+                    <footer><a href="#" role="button" class="secondary">前往管理</a></footer>
+                </article>
+                <article>
+                    <h4>查看支持请求</h4>
+                    <p>处理学生的调宿申请和反馈。</p>
+                    <footer><a href="#" role="button" class="contrast">前往处理</a></footer>
+                </article>
+            </div>
+        </section>
+    </body>
+    </html>
+    ```
+    *（`student/dashboard.html` 结构类似，内容不同，后续阶段再实现）*
 
 ---
 
-### **阶段 1: 用户与认证 (P1)**
+### **后续开发阶段 (TDD + AI协作)**
 
-1. **创建JPA实体**:
-    - 根据DDL，在 `entity` 包中创建 `User` 实体，使用 `@Entity`, `@Table`, `@Id` 等注解。使用Lombok简化代码。
-2. **创建JPA Repository**:
-    - 在 `repository` 包中创建 `UserRepository` 接口，继承 `JpaRepository<User, UUID>`。添加 `findByStudentId(String studentId)` 方法。
-3. **实现Spring Security**:
-    - 在 `security` 包中创建 `JwtUtil` 用于生成和验证Token。
-    - 创建 `UserDetailsServiceImpl` 实现 `UserDetailsService`，重写 `loadUserByUsername` 方法（通过学号加载用户）。
-    - 创建 `JwtRequestFilter` 继承 `OncePerRequestFilter`，用于解析JWT并设置安全上下文。
-    - 创建 `SecurityConfig`，配置 `PasswordEncoder` (BCrypt)，定义HTTP安全规则（如 `/api/auth/login` 允许匿名访问，其他 `/api/**` 需要认证），并将 `JwtRequestFilter` 添加到过滤器链中。
-4. **创建DTOs**:
-    - 在 `dto` 包中创建 `LoginRequest`, `LoginResponse` 等记录(Record)或类。
-5. **创建Controller和Service**:
-    - 在 `service` 包中创建 `AuthService`，处理登录逻辑。
-    - 在 `controller` 包中创建 `AuthController`，实现 `POST /api/auth/login` 端点。
+现在，我们将以功能模块为单位，快速迭代。
 
-**【可验证】**:
-
-- 手动在数据库中插入一条已哈希密码的ADMIN用户记录。
-- 使用Postman访问 `/api/admin/cycles`（此时尚未实现，但会因未认证而返回401）。
-- 调用 `POST /api/auth/login`，使用正确的凭据，应返回200和JWT。
-- 携带此JWT再次访问 `/api/admin/cycles`，应返回403（因为需要ADMIN角色）或404（因为接口未实现），但不再是401。
+| 阶段 | 核心目标 | 涉及用例 | **你的TDD任务 (Controller & Test)** | **我的任务 (Thymeleaf模板)** |
+| :--- | :--- | :--- | :--- | :--- |
+| **Phase 2** | **宿舍资源管理** | `ADM-05` | 1. **创建 `AdminDormController.java`**。<br> 2. **测试并实现 `GET /admin/buildings`**: 返回 `admin/dorm/buildings` 视图，Model中包含楼栋列表。<br> 3. **测试并实现 `GET /admin/buildings/new`**: 返回 `admin/dorm/building-form` 视图。<br> 4. **测试并实现 `POST /admin/buildings`**: 处理表单提交，成功后重定向到列表页。<br> 5. 对 **Rooms** 和 **Beds** 重复此模式。 | 1. `buildings.html`: 使用 `<table>` 和 `th:each` 显示楼栋列表。<br> 2. `building-form.html`: 使用 `<form>`, `th:object`, `th:field` 创建和编辑楼栋。<br> 3. `rooms.html` 和 `room-form.html`。 |
+| **Phase 3** | **匹配周期与问卷管理** | `ADM-01`, `ADM-02` | 1. **创建 `AdminCycleController.java`**。<br> 2. **测试并实现周期(Cycle)的CRUD**，页面结构同上。<br> 3. **测试并实现维度的CRUD**，这是核心。例如 `GET /admin/cycles/{id}/dimensions` 返回 `admin/cycle/dimensions` 视图，Model包含维度列表。 | 1. `cycles.html`, `cycle-form.html`。<br> 2. `dimensions.html`: 显示一个周期的所有问卷问题，带 "新增问题" 按钮。<br> 3. `dimension-form.html`: 动态表单，可添加/删除问题选项（初期可简化为固定数量选项）。 |
+| **Phase 4** | **学生核心流程** | `STU-02`, `STU-03` | 1. **创建 `StudentSurveyController.java`**。<br> 2. **测试并实现 `GET /student/survey`**: 返回 `student/survey-form` 视图，Model包含问卷数据。<br> 3. **测试并实现 `POST /student/survey`**: 处理提交，重定向到感谢页面。<br> 4. **测试并实现 `GET /student/result`**: 返回 `student/result-view` 视图，Model包含个人分配结果和室友信息。 | 1. `survey-form.html`: 使用 `th:each` 渲染所有问题和选项（单选框/范围滑块）。<br> 2. `result-view.html`: 使用 `<article>` 和 `grid` 优雅地展示宿舍、床位和室友列表。 |
+| **Phase 5** | **分配触发与结果监控** | `ADM-03`, `ADM-04`, `ADM-08` | 1. 在 `AdminCycleController` 中添加方法。<br> 2. **测试并实现 `POST /admin/cycles/{id}/trigger`**: 处理“一键分配”的表单提交，重定向回周期详情页，并附带成功消息。<br> 3. **测试并实现 `GET /admin/cycles/{id}/results`**: 返回 `admin/cycle/results-list` 视图，Model包含完整分配清单。<br> 4. **测试并实现 `GET /admin/cycles/{id}/quality-report`**: 返回`admin/cycle/quality-report`视图，Model包含质量报告数据。 | 1. `cycle-details.html`: 包含一个醒目的 "一键分配" `button`。<br> 2. `results-list.html`: 包含一个可搜索/分页的表格，展示所有学生的分配结果。<br> 3. `quality-report.html`: 使用卡片和进度条展示各项指标的达标情况。 |
+| **Phase 6** | **支持与内容发布** | `ADM-06`, `ADM-07`, `STU-04`, `STU-05` | 1. **创建 `SupportController.java`**。<br> 2. 分别为 **调宿申请**(Swap Requests) 和 **文章**(Articles) 实现管理员的列表/详情/审批页面，和学生的提交/查看页面。<br> 3. 模式与Phase 2类似，但涉及的角色更多。 | 1. `admin/swap-requests.html` (列表), `student/swap-request-form.html` (表单)。<br> 2. `admin/articles.html` (列表), `admin/article-form.html` (表单), `student/article-view.html` (文章详情)。 |
 
 ---
 
-### **阶段 2: 宿舍资源管理 (P2)**
+### **你的第一个任务 (Let's Get Started!)**
 
-1. **创建JPA实体**:
-    - 在 `entity` 包中创建 `DormBuilding`, `DormRoom`, `Bed`。正确配置 `@ManyToOne`, `@OneToMany` 等关系。
-2. **创建JPA Repositories**:
-    - 创建 `DormBuildingRepository`, `DormRoomRepository`, `BedRepository`。
-3. **创建DTOs**:
-    - 根据API规范创建对应的DTO，如 `DormBuildingDto`, `DormRoomDto` 等。我会使用MapStruct或手动转换来处理Entity和DTO的映射。
-4. **创建Service和Controller**:
-    - 创建 `DormResourceService`，封装所有宿舍资源的CRUD逻辑（如，删除楼栋前检查是否有房间）。
-    - 创建 `DormResourceController`，实现 `/api/admin/dorm-buildings`, `/api/admin/dorm-rooms`, `/api/admin/beds` 等所有相关端点。使用 `@PreAuthorize("hasRole('ADMIN')")` 保护接口。
+让我们从 **Phase 1** 开始，把登录和主面板跑起来。
 
-**【可验证】**:
+1.  **确认/添加 `thymeleaf-layout-dialect` 依赖** 到你的 `pom.xml`。
+2.  **用我提供的代码更新 `layout.html`**。
+3.  **创建 `DashboardController.java`** 和对应的测试类。
+4.  **在测试类中，编写第一个测试**：
+    ```java
+    @Test
+    @WithMockUser(username = "testAdmin", roles = "ADMIN") // 使用Spring Security Test模拟一个已登录的管理员
+    void whenAdminAccessesDashboard_thenReturnsAdminDashboardView() throws Exception {
+        mockMvc.perform(get("/view/admin/dashboard"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("admin/dashboard"))
+                .andExpect(model().attributeExists("welcomeMessage")); // 举例：验证Model中有特定属性
+    }
+    ```
+5.  **在 `DashboardController.java` 中实现这个方法**，让测试通过。
+    ```java
+    @Controller
+    public class DashboardController {
 
-- 使用阶段1获取的Admin Token。
-- 通过API `POST /api/admin/dorm-buildings` 创建一个楼栋。
-- `GET` 验证楼栋已创建。
-- 使用返回的`buildingId`，`POST /api/admin/dorm-rooms` 创建一个房间。
-- 对所有相关实体完成增、删、改、查的完整测试。
+        @GetMapping("/view/admin/dashboard")
+        @PreAuthorize("hasRole('ADMIN')")
+        public String adminDashboard(Model model) {
+            // 你可以从Service获取真实数据放入Model
+            model.addAttribute("welcomeMessage", "欢迎回来，管理员！");
+            return "admin/dashboard"; // 返回视图名
+        }
 
----
+        // ... 学生dashboard的方法 ...
+    }
+    ```
+6.  **创建 `admin/dashboard.html` 文件**，并使用我上面提供的模板代码。
+7.  **运行应用**，用你数据库里的`admin`账号（密码`password`）登录，你应该能看到一个漂亮的Vercel风格的管理员主面板。
 
-### **阶段 3: 匹配周期与问卷管理 (P3)**
-
-1. **创建JPA实体**:
-    - `MatchingCycle`, `SurveyDimension`, `DimensionOption`。注意 `SurveyDimension` 和 `DimensionOption` 之间的 `@OneToMany` 关系，并设置 `cascade = CascadeType.ALL` 和 `orphanRemoval = true` 以简化管理。
-2. **创建JPA Repositories**:
-    - `MatchingCycleRepository`, `SurveyDimensionRepository`。`DimensionOption` 通常通过 `SurveyDimension` 级联操作，可能不需要独立的Repository。
-3. **创建DTOs**:
-    - `MatchingCycleDto`, `SurveyDimensionCreateDto`, `SurveyDimensionDto` 等。`SurveyDimensionDto` 会内嵌一个 `DimensionOptionDto` 的列表。
-4. **创建Service和Controller**:
-    - 创建 `CycleService` 和 `DimensionService`（或一个统一的 `CycleManagementService`）。
-    - 创建 `CycleController` 和 `DimensionController`，实现 `/api/admin/cycles/**` 和 `/api/admin/cycles/{cycleId}/dimensions/**` 的所有端点。
-
-**【可验证】**:
-
-- 使用Admin Token。
-- `POST /api/admin/cycles` 创建一个新周期。
-- `GET /api/admin/cycles/{cycleId}` 验证。
-- `POST /api/admin/cycles/{cycleId}/dimensions` 为该周期创建一个包含多个选项的问卷维度。
-- `GET /api/admin/cycles/{cycleId}/dimensions` 验证维度和选项都已正确创建。
-- 测试更新和删除操作。
-
----
-
-### **阶段 4: 学生核心流程 (P4)**
-
-1. **创建JPA实体**:
-    - `UserResponse`, `MatchingResult`。
-2. **创建JPA Repositories**:
-    - `UserResponseRepository`, `MatchingResultRepository`。
-3. **创建DTOs**:
-    - `UserResponseSubmitDto`, `AssignmentResultStudentDto` 等。
-4. **创建Service和Controller**:
-    - 创建 `StudentSurveyService`，逻辑包括：
-        - `GET /api/student/survey`: 查找当前状态为 'OPEN' 的周期及其所有维度。
-        - `POST /api/student/responses`: 为当前登录的学生批量保存或更新答案。
-    - 创建 `StudentController` 实现上述接口。
-    - **【关键简化】**: 在 `AdminController` 中实现 `POST /api/admin/cycles/{cycleId}/trigger-assignment`。**此版本中，该接口仅将周期状态从 `OPEN` 修改为 `COMPLETED`，并返回202 Accepted。它不执行任何实际的匹配算法。**
-    - 实现学生和管理员查看结果的API (`/student/result`, `/admin/cycles/{cycleId}/results`)。目前它们将返回空数据或手动插入数据库的测试数据。
-
-**【可验证】**:
-
-- 管理员将某个周期状态更新为 `OPEN`。
-- 使用学生账户登录，获取Token。
-- `GET /api/student/survey` 能否拉取到问卷？
-- `POST /api/student/responses` 提交答案。
-- 管理员调用 `trigger-assignment`，周期状态变为 `COMPLETED`。
-- 学生调用 `GET /api/student/result`，应收到404或空数据，表示流程通畅。
-
----
-
-### **阶段 5: 支持性功能 (P5)**
-
-这是一个快速的“扫尾”阶段，因为大部分功能都是纯粹的CRUD。
-
-1. **创建实体、Repository、DTO、Service、Controller**:
-    - 为 `Feedback` 实体实现 `POST /student/feedback`。
-    - 为 `SwapRequest` 实体实现学生端的 `POST` 和管理员端的 `GET`、`PUT`。
-    - 为 `ContentArticle` 实体实现管理员的全套CRUD和学生端的 `GET` 列表/详情。
-    - 为 `Notification` 实体实现学生端的 `GET`、`POST /read`。
-
-**【可验证】**:
-
-- 使用学生和管理员Token，逐一测试OpenAPI规范中所有剩余的CRUD接口，确保它们按预期工作。
-
----
-
-### **阶段 6: 部署与最终验证 (P6)**
-
-1. **创建 `Dockerfile`**:
-    - 使用多阶段构建（multi-stage build）。
-    - 第一阶段：使用 `maven:3.8-openjdk-17` 镜像构建项目，生成 `.jar` 文件。
-    - 第二阶段：使用 `eclipse-temurin:17-jre-jammy` 这种更小的基础镜像，将第一阶段的 `.jar` 文件复制过来。
-    - 设置 `ENTRYPOINT` 来运行java应用。
-2. **完善 `docker-compose.yml`**:
-    - 为 `app` 服务添加 `build: .` 指令，使其使用项目根目录的 `Dockerfile` 构建镜像。
-    - 设置 `depends_on: - postgres`，确保数据库先启动。
-    - 将 `application.yml` 中的数据库主机名改为 `postgres`（Docker Compose内部网络的服务名）。
-    - 配置端口映射 `8080:8080`。
-3. **执行部署**:
-    - 在项目根目录运行 `docker-compose up --build -d`。
-
-**【可验证】**:
-
-- 两个容器（app, postgres）都成功运行。
-- 可以通过 `http://localhost:8080/api/...` 访问所有API端点，并得到与本地开发时一致的响应。
-
-### **结论**
-
-此方案通过**严格的功能降级（搁置算法）、清晰的阶段划分和原子化的任务设计**，将一个看似庞大的项目分解为一天内可以完成的、一系列对AI编码器友好的指令。每一步都有明确的产出和验证方法，确保了开发过程的稳健和高效。
-
-**现在，请授权我开始执行第一阶段（P0）的任务。**
+当你完成这个任务后，告诉我，我们就可以立即进入 **Phase 2**。这个计划将确保我们在紧张的工期内，高效、高质量地完成前端开发。我们开始吧！

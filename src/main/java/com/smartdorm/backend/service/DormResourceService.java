@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -123,4 +124,56 @@ public class DormResourceService {
         }
         bedRepository.deleteById(bedId);
     }
+    public record RoomDetailDto(UUID id, String roomNumber, int capacity, String genderType, UUID buildingId, String buildingName) {}
+
+    public List<DormRoomDto> getAllRooms() {
+        return roomRepository.findAll().stream().map(dormMapper::toDto).collect(Collectors.toList());
+    }
+
+    // New method to get enhanced room details for the view
+    public List<RoomDetailDto> getRoomDetails() {
+        List<DormRoom> rooms = roomRepository.findAll();
+        // To avoid N+1 queries, fetch all buildings and put them in a map
+        Map<UUID, String> buildingNames = buildingRepository.findAll().stream()
+                .collect(Collectors.toMap(DormBuilding::getId, DormBuilding::getName));
+
+        return rooms.stream()
+                .map(room -> new RoomDetailDto(
+                        room.getId(),
+                        room.getRoomNumber(),
+                        room.getCapacity(),
+                        room.getGenderType(),
+                        room.getBuilding().getId(),
+                        buildingNames.getOrDefault(room.getBuilding().getId(), "N/A")
+                ))
+                .collect(Collectors.toList());
+    }
+
+    public DormRoomDto getRoomById(UUID roomId) {
+        return roomRepository.findById(roomId)
+                .map(dormMapper::toDto)
+                .orElseThrow(() -> new ResourceNotFoundException("Room not found with id: " + roomId));
+    }
+
+    public List<BedDto> getBedsForRoom(UUID roomId) {
+        return bedRepository.findByRoomIdOrderByBedNumberAsc(roomId).stream()
+                .map(dormMapper::toDto)
+                .collect(Collectors.toList());
+    }
+
+    public RoomDetailDto getRoomDetailById(UUID roomId) {
+        DormRoom room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new ResourceNotFoundException("Room not found with id: " + roomId));
+
+        // This is efficient as it only fetches what's needed
+        return new RoomDetailDto(
+                room.getId(),
+                room.getRoomNumber(),
+                room.getCapacity(),
+                room.getGenderType(),
+                room.getBuilding().getId(),
+                room.getBuilding().getName() // Eagerly fetched or lazy loaded here
+        );
+    }
+
 }

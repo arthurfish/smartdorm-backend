@@ -3,26 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>系统登录</title>
+    <title>系统登录 - 智慧宿舍分配系统</title>
     <link rel="stylesheet" th:href="@{/css/pico.min.css}">
+    <style>
+        .error { color: var(--pico-form-element-invalid-border-color); font-size: 0.875rem; margin-top: -0.5rem; margin-bottom: 1rem; }
+        .success { color: var(--pico-form-element-valid-border-color); }
+    </style>
 </head>
 <body>
-<main class="container" style="max-width: 480px; margin-top: 5vh;">
+<main class="container" style="max-width: 480px; margin-top: 10vh;">
     <article>
-        <h2 style="text-align: center;">智慧宿舍分配系统登录</h2>
+        <h2 style="text-align: center;">智慧宿舍系统登录</h2>
+
         <form th:action="@{/perform_login}" method="post">
+            <p th:if="${param.error}" class="error">学号或密码错误，请重试。</p>
+            <p th:if="${param.logout}" class="success">您已成功登出。</p>
+
             <label for="username">学号</label>
-            <input type="text" id="username" name="username" placeholder="请输入学号" required autofocus>
+            <input type="text" id="username" name="username" placeholder="学号 / 管理员账号" required autofocus>
 
             <label for="password">密码</label>
-            <input type="password" id="password" name="password" placeholder="请输入密码" required>
-
-            <div th:if="${param.error}" class="error-message" style="color: var(--pico-form-element-invalid-border-color);">
-                学号或密码错误，请重试。
-            </div>
-            <div th:if="${param.logout}" class="success-message" style="color: var(--pico-form-element-valid-border-color);">
-                您已成功登出。
-            </div>
+            <input type="password" id="password" name="password" placeholder="密码" required>
 
             <button type="submit" style="width: 100%;">登录</button>
         </form>

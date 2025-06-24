@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title th:text="${pageTitle}">房间表单</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <hgroup>
+        <h2 th:text="${pageTitle}">新建/编辑房间</h2>
+        <h3 th:text="${roomId == null} ? '创建一个新的房间。' : '修改现有房间的信息。'"></h3>
+    </hgroup>
+
+    <article>
+        <form th:action="${roomId == null} ? @{/view/admin/dorms/rooms/create} : @{/view/admin/dorms/rooms/{id}/update(id=${roomId})}"
+              th:object="${roomDto}"
+              method="post">
+
+            <label for="buildingId">
+                所属楼栋
+                <select id="buildingId" th:field="*{buildingId}" required
+                        th:aria-invalid="${#fields.hasErrors('buildingId')} ? 'true' : 'false'">
+                    <option value="">请选择一个楼栋</option>
+                    <option th:each="building : ${buildings}"
+                            th:value="${building.id()}"
+                            th:text="${building.name()}"></option>
+                </select>
+                <small th:if="${#fields.hasErrors('buildingId')}" th:errors="*{buildingId}" class="error"></small>
+            </label>
+
+            <div class="grid">
+                <label for="roomNumber">
+                    房间号
+                    <input type="text" id="roomNumber" th:field="*{roomNumber}" placeholder="例如: 301, 402B" required
+                           th:aria-invalid="${#fields.hasErrors('roomNumber')} ? 'true' : 'false'">
+                    <small th:if="${#fields.hasErrors('roomNumber')}" th:errors="*{roomNumber}" class="error"></small>
+                </label>
+                <label for="capacity">
+                    容量
+                    <input type="number" id="capacity" th:field="*{capacity}" min="1" required
+                           th:aria-invalid="${#fields.hasErrors('capacity')} ? 'true' : 'false'">
+                    <small th:if="${#fields.hasErrors('capacity')}" th:errors="*{capacity}" class="error"></small>
+                </label>
+            </div>
+
+            <fieldset>
+                <legend>性别类型</legend>
+                <label for="male">
+                    <input type="radio" id="male" th:field="*{genderType}" value="MALE">
+                    男
+                </label>
+                <label for="female">
+                    <input type="radio" id="female" th:field="*{genderType}" value="FEMALE">
+                    女
+                </label>
+            </fieldset>
+
+            <div class="grid">
+                <a th:href="@{/view/admin/dorms/rooms}" role="button" class="secondary outline">取消</a>
+                <button type="submit" th:text="${roomId == null} ? '创建房间' : '保存更改'">提交</button>
+            </div>
+        </form>
+    </article>
+</section>
+</body>
+</html>

@@ -328,6 +328,14 @@ Write-Host "`nFile creation completed. Check the output for details."
             <version>1.19.7</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-thymeleaf</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>nz.net.ultraq.thymeleaf</groupId>
+            <artifactId>thymeleaf-layout-dialect</artifactId>
+        </dependency>
     </dependencies>
 
     <build>
@@ -398,10 +406,23 @@ public class DataSeeder implements CommandLineRunner {
             userRepository.save(adminUser);
             System.out.println("====== Default admin user created. Username: admin, Password: password ======");
         }
+        if (userRepository.findByStudentId("student").isEmpty()) {
+            User adminUser = new User();
+            adminUser.setStudentId("student");
+            adminUser.setName("Student");
+            // IMPORTANT: The password is "password"
+            adminUser.setPassword(passwordEncoder.encode("password"));
+            adminUser.setRole("STUDENT");
+            adminUser.setGender("MALE");
+            adminUser.setCollege("CS");
+            userRepository.save(adminUser);
+            System.out.println("====== Default student user created. Username: student, Password: password ======");
+        }
     }
 }
 ----------
 .\src\main\java\com\smartdorm\backend\config\SecurityConfig.java:
+// src/main/java/com/smartdorm/backend/config/SecurityConfig.java
 package com.smartdorm.backend.config;
 
 import com.smartdorm.backend.security.JwtAccessDeniedHandler;
@@ -409,6 +430,7 @@ import com.smartdorm.backend.security.JwtAuthenticationEntryPoint;
 import com.smartdorm.backend.security.JwtRequestFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -420,17 +442,17 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 
 @Configuration
 @EnableWebSecurity
-@EnableMethodSecurity(prePostEnabled = true) // To enable @PreAuthorize
+@EnableMethodSecurity(prePostEnabled = true)
 public class SecurityConfig {
 
     private final JwtRequestFilter jwtRequestFilter;
-    private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint; // 娉ㄥ叆璁よ瘉鍏ュ彛鐐?
+    private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
     private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
 
-    // 鏋勯€犳柟娉曟敞鍏ワ紙Spring Boot 2.7+鎺ㄨ崘锛?
     public SecurityConfig(JwtRequestFilter jwtRequestFilter,
                           JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint,
                           JwtAccessDeniedHandler jwtAccessDeniedHandler) {
@@ -439,6 +461,7 @@ public class SecurityConfig {
         this.jwtAccessDeniedHandler = jwtAccessDeniedHandler;
     }
 
+    // --- 鐜版湁 Bean 淇濇寔涓嶅彉 ---
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
@@ -449,24 +472,53 @@ public class SecurityConfig {
         return authenticationConfiguration.getAuthenticationManager();
     }
 
+    // --- 瀹夊叏閾鹃厤缃皟鏁?---
+
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    @Order(1) // API 瀹夊叏閾撅紝澶勭悊鏃犵姸鎬佺殑 JWT 璇锋眰
+    public SecurityFilterChain apiSecurityFilterChain(HttpSecurity http) throws Exception {
         http
-                // **鍏抽敭淇锛氫娇鐢ㄦ槑纭殑鏂瑰紡绂佺敤 CSRF**
-                .csrf(AbstractHttpConfigurer::disable)
+                .securityMatcher("/api/**") // **鍏抽敭**: 姝ら摼鍙鐞?/api/** 涓嬬殑璇锋眰
+                .csrf(AbstractHttpConfigurer::disable) // **鍏抽敭**: 瀵?API 绂佺敤 CSRF
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/api/ping").permitAll() // 纭繚 API 鐧诲綍绔偣鏄叕寮€鐨?
+                        .requestMatchers("/api/auth/login").permitAll() // 纭繚 API 鐧诲綍绔偣鏄叕寮€鐨?
+                        .anyRequest().authenticated()
+                )
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(jwtAuthenticationEntryPoint)
                         .accessDeniedHandler(jwtAccessDeniedHandler)
                 )
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/login", "/ping").permitAll()
-                        .requestMatchers("/**").authenticated()
-                        .anyRequest().denyAll()
-                )
-                // 閰嶇疆浼氳瘽绠＄悊涓烘棤鐘舵€侊紝鍥犱负鎴戜滑浣跨敤JWT
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                // 鍦ㄦ爣鍑嗙殑鐢ㄦ埛鍚嶅瘑鐮佽璇佽繃婊ゅ櫒涔嬪墠锛屾坊鍔犳垜浠殑JWT杩囨护鍣?
                 .addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class);
+        return http.build();
+    }
+
+    @Bean
+    @Order(2) // View Security Chain (for Thymeleaf)
+    public SecurityFilterChain formLoginFilterChain(HttpSecurity http) throws Exception {
+        http
+                .authorizeHttpRequests(auth -> auth
+                        // Publicly accessible resources
+                        .requestMatchers("/css/**", "/js/**", "/error", "/login", "/perform_login").permitAll()
+                        // Role-based access control for views
+                        .requestMatchers("/view/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/view/student/**").hasRole("STUDENT")
+                        // Any other request must be authenticated
+                        .anyRequest().authenticated()
+                )
+                .formLogin(form -> form
+                        .loginPage("/login")
+                        .loginProcessingUrl("/perform_login")
+                        .defaultSuccessUrl("/view/home", true) // Redirect to home after login
+                        .failureUrl("/login?error=true")
+                )
+                .logout(logout -> logout
+                        .logoutUrl("/perform_logout")
+                        .logoutSuccessUrl("/login?logout=true")
+                        .invalidateHttpSession(true)
+                        .deleteCookies("JSESSIONID")
+                );
         return http.build();
     }
 }
@@ -520,6 +572,234 @@ public class AdminAssignmentController {
     public ResponseEntity<AdminAssignmentValidationDto> validateResults(@PathVariable UUID cycleId) {
         AdminAssignmentValidationDto report = adminAssignmentService.validateResults(cycleId);
         return ResponseEntity.ok(report);
+    }
+}
+----------
+.\src\main\java\com\smartdorm\backend\controller\AdminDormViewController.java:
+package com.smartdorm.backend.controller;
+
+import com.smartdorm.backend.dto.DormDtos;
+import com.smartdorm.backend.service.DormResourceService;
+import com.smartdorm.backend.service.DormResourceService.RoomDetailDto;
+import jakarta.validation.Valid;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+@Controller
+@RequestMapping("/view/admin/dorms")
+@PreAuthorize("hasRole('ADMIN')")
+public class AdminDormViewController {
+
+    private final DormResourceService dormResourceService;
+
+    public AdminDormViewController(DormResourceService dormResourceService) {
+        this.dormResourceService = dormResourceService;
+    }
+
+    // --- Building Management Views ---
+
+    @GetMapping("/buildings")
+    public String listBuildings(Model model) {
+        model.addAttribute("buildings", dormResourceService.getAllBuildings());
+        return "admin/dorm/buildings-list";
+    }
+
+    @GetMapping("/buildings/new")
+    public String showNewBuildingForm(Model model) {
+        model.addAttribute("buildingDto", new DormDtos.BuildingCreateUpdateDto(""));
+        model.addAttribute("pageTitle", "鏂板缓妤兼爧");
+        return "admin/dorm/building-form";
+    }
+
+    @PostMapping("/buildings/create")
+    public String createBuilding(@Valid @ModelAttribute("buildingDto") DormDtos.BuildingCreateUpdateDto dto,
+                                 BindingResult result, Model model, RedirectAttributes redirectAttributes) {
+        if (result.hasErrors()) {
+            model.addAttribute("pageTitle", "鏂板缓妤兼爧");
+            return "admin/dorm/building-form";
+        }
+        dormResourceService.createBuilding(dto);
+        redirectAttributes.addFlashAttribute("successMessage", "妤兼爧 '" + dto.name() + "' 鍒涘缓鎴愬姛锛?);
+        return "redirect:/view/admin/dorms/buildings";
+    }
+
+    @GetMapping("/buildings/{id}/edit")
+    public String showEditBuildingForm(@PathVariable UUID id, Model model) {
+        DormDtos.DormBuildingDto building = dormResourceService.getAllBuildings().stream()
+                .filter(b -> b.id().equals(id)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Invalid building Id:" + id));
+
+        model.addAttribute("buildingDto", new DormDtos.BuildingCreateUpdateDto(building.name()));
+        model.addAttribute("buildingId", id);
+        model.addAttribute("pageTitle", "缂栬緫妤兼爧");
+        return "admin/dorm/building-form";
+    }
+
+    @PostMapping("/buildings/{id}/update")
+    public String updateBuilding(@PathVariable UUID id, @Valid @ModelAttribute("buildingDto") DormDtos.BuildingCreateUpdateDto dto,
+                                 BindingResult result, Model model, RedirectAttributes redirectAttributes) {
+        if (result.hasErrors()) {
+            model.addAttribute("buildingId", id);
+            model.addAttribute("pageTitle", "缂栬緫妤兼爧");
+            return "admin/dorm/building-form";
+        }
+        dormResourceService.updateBuilding(id, dto);
+        redirectAttributes.addFlashAttribute("successMessage", "妤兼爧淇℃伅鏇存柊鎴愬姛锛?);
+        return "redirect:/view/admin/dorms/buildings";
+    }
+
+    @PostMapping("/buildings/{id}/delete")
+    public String deleteBuilding(@PathVariable UUID id, RedirectAttributes redirectAttributes) {
+        try {
+            dormResourceService.deleteBuilding(id);
+            redirectAttributes.addFlashAttribute("successMessage", "妤兼爧鍒犻櫎鎴愬姛锛?);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("errorMessage", "鍒犻櫎澶辫触锛? + e.getMessage());
+        }
+        return "redirect:/view/admin/dorms/buildings";
+    }
+
+    @GetMapping("/rooms")
+    public String listRooms(Model model, @RequestParam(required = false) UUID buildingId) {
+        // Fetch all rooms and buildings for filtering
+        // In a real large-scale app, this would be paginated and fetched from service layer more efficiently
+        List<DormDtos.DormRoomDto> allRooms = dormResourceService.getAllRooms(); // Assuming you add this method to your service
+        List<DormDtos.DormBuildingDto> allBuildings = dormResourceService.getAllBuildings();
+
+        List<DormDtos.DormRoomDto> filteredRooms = allRooms;
+        if (buildingId != null) {
+            filteredRooms = allRooms.stream()
+                    .filter(room -> room.buildingId().equals(buildingId))
+                    .collect(Collectors.toList());
+        }
+
+        model.addAttribute("rooms", filteredRooms);
+        model.addAttribute("buildings", allBuildings);
+        model.addAttribute("selectedBuildingId", buildingId); // To keep the filter active
+
+        // Enhance rooms with building names for display
+        model.addAttribute("roomDetails", dormResourceService.getRoomDetails()); // You will create this method
+
+        return "admin/dorm/rooms-list";
+    }
+
+    @GetMapping("/rooms/new")
+    public String showNewRoomForm(Model model) {
+        if (!model.containsAttribute("roomDto")) {
+            model.addAttribute("roomDto", new DormDtos.RoomCreateUpdateDto(null, "", 1, "MALE"));
+        }
+        model.addAttribute("buildings", dormResourceService.getAllBuildings());
+        model.addAttribute("pageTitle", "鏂板缓鎴块棿");
+        return "admin/dorm/room-form";
+    }
+
+    @PostMapping("/rooms/create")
+    public String createRoom(@Valid @ModelAttribute("roomDto") DormDtos.RoomCreateUpdateDto dto,
+                             BindingResult result, RedirectAttributes redirectAttributes, Model model) {
+        if (result.hasErrors()) {
+            model.addAttribute("buildings", dormResourceService.getAllBuildings());
+            model.addAttribute("pageTitle", "鏂板缓鎴块棿");
+            return "admin/dorm/room-form";
+        }
+        dormResourceService.createRoom(dto);
+        redirectAttributes.addFlashAttribute("successMessage", "鎴块棿 '" + dto.roomNumber() + "' 鍒涘缓鎴愬姛锛?);
+        return "redirect:/view/admin/dorms/rooms";
+    }
+
+    @GetMapping("/rooms/{id}/edit")
+    public String showEditRoomForm(@PathVariable UUID id, Model model) {
+        // You'll need a getRoomById in your service layer
+        RoomDetailDto room = dormResourceService.getRoomDetails().stream()
+                .filter(r -> r.id().equals(id)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Invalid room Id:" + id));
+
+        DormDtos.RoomCreateUpdateDto dto = new DormDtos.RoomCreateUpdateDto(room.buildingId(), room.roomNumber(), room.capacity(), room.genderType());
+
+        model.addAttribute("roomDto", dto);
+        model.addAttribute("roomId", id);
+        model.addAttribute("buildings", dormResourceService.getAllBuildings());
+        model.addAttribute("pageTitle", "缂栬緫鎴块棿");
+        return "admin/dorm/room-form";
+    }
+
+    @PostMapping("/rooms/{id}/update")
+    public String updateRoom(@PathVariable UUID id, @Valid @ModelAttribute("roomDto") DormDtos.RoomCreateUpdateDto dto,
+                             BindingResult result, Model model, RedirectAttributes redirectAttributes) {
+        if (result.hasErrors()) {
+            model.addAttribute("roomId", id);
+            model.addAttribute("buildings", dormResourceService.getAllBuildings());
+            model.addAttribute("pageTitle", "缂栬緫鎴块棿");
+            return "admin/dorm/room-form";
+        }
+        dormResourceService.updateRoom(id, dto);
+        redirectAttributes.addFlashAttribute("successMessage", "鎴块棿淇℃伅鏇存柊鎴愬姛锛?);
+        return "redirect:/view/admin/dorms/rooms";
+    }
+
+    @PostMapping("/rooms/{id}/delete")
+    public String deleteRoom(@PathVariable UUID id, RedirectAttributes redirectAttributes) {
+        try {
+            dormResourceService.deleteRoom(id);
+            redirectAttributes.addFlashAttribute("successMessage", "鎴块棿鍒犻櫎鎴愬姛锛?);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("errorMessage", "鍒犻櫎澶辫触锛? + e.getMessage());
+        }
+        return "redirect:/view/admin/dorms/rooms";
+    }
+
+    @GetMapping("/rooms/{roomId}/details")
+    public String showRoomDetailsAndBeds(@PathVariable UUID roomId, Model model) {
+        RoomDetailDto roomDetails = dormResourceService.getRoomDetails().stream()
+                .filter(r -> r.id().equals(roomId)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Invalid room Id:" + roomId));
+
+        List<DormDtos.BedDto> beds = dormResourceService.getBedsForRoom(roomId); // You will create this method
+
+        model.addAttribute("room", roomDetails);
+        model.addAttribute("beds", beds);
+        model.addAttribute("bedCreateDto", new DormDtos.BedCreateRequestDto(1)); // For the form
+        model.addAttribute("pageTitle", "鎴块棿璇︽儏涓庡簥浣嶇鐞?);
+        return "admin/dorm/room-details";
+    }
+
+    @PostMapping("/rooms/{roomId}/beds/create-batch")
+    public String createBedsBatch(@PathVariable UUID roomId,
+                                  @Valid @ModelAttribute("bedCreateDto") DormDtos.BedCreateRequestDto dto,
+                                  BindingResult result, RedirectAttributes redirectAttributes, Model model) {
+        if (result.hasErrors()) {
+            // If validation fails, we need to reload the page with the error
+            RoomDetailDto roomDetails = dormResourceService.getRoomDetails().stream()
+                    .filter(r -> r.id().equals(roomId)).findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("Invalid room Id:" + roomId));
+            List<DormDtos.BedDto> beds = dormResourceService.getBedsForRoom(roomId);
+            model.addAttribute("room", roomDetails);
+            model.addAttribute("beds", beds);
+            model.addAttribute("pageTitle", "鎴块棿璇︽儏涓庡簥浣嶇鐞?);
+            return "admin/dorm/room-details";
+        }
+
+        dormResourceService.createBedsForRoom(roomId, dto);
+        redirectAttributes.addFlashAttribute("successMessage", "鎴愬姛娣诲姞 " + dto.bedCount() + " 涓簥浣嶏紒");
+        return "redirect:/view/admin/dorms/rooms/" + roomId + "/details";
+    }
+
+    @PostMapping("/beds/{bedId}/delete")
+    public String deleteBed(@PathVariable UUID bedId, @RequestParam UUID roomId, RedirectAttributes redirectAttributes) {
+        try {
+            dormResourceService.deleteBed(bedId);
+            redirectAttributes.addFlashAttribute("successMessage", "搴婁綅鍒犻櫎鎴愬姛锛?);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("errorMessage", "鍒犻櫎澶辫触锛? + e.getMessage());
+        }
+        return "redirect:/view/admin/dorms/rooms/" + roomId + "/details";
     }
 }
 ----------
@@ -709,6 +989,45 @@ public class CycleController {
     }
 }
 ----------
+.\src\main\java\com\smartdorm\backend\controller\DashboardController.java:
+package com.smartdorm.backend.controller;
+
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+
+@Controller
+@RequestMapping("/view")
+public class DashboardController {
+
+    /**
+     * Handles requests for the admin dashboard.
+     * Only accessible by users with the 'ADMIN' role.
+     * @return The view name for the admin dashboard.
+     */
+    @GetMapping("/admin/dashboard")
+    @PreAuthorize("hasRole('ADMIN')")
+    public String adminDashboard(Model model) {
+        // Here you can add data from services to the model
+        // For example: model.addAttribute("pendingRequests", swapRequestService.countPending());
+        return "admin/dashboard"; // Corresponds to /templates/admin/dashboard.html
+    }
+
+    /**
+     * Handles requests for the student dashboard.
+     * Only accessible by users with the 'STUDENT' role.
+     * @return The view name for the student dashboard.
+     */
+    @GetMapping("/student/dashboard")
+    @PreAuthorize("hasRole('STUDENT')")
+    public String studentDashboard(Model model) {
+        // Example: model.addAttribute("isSurveyOpen", surveyService.isSurveyOpenForStudent());
+        return "student/dashboard"; // Corresponds to /templates/student/dashboard.html
+    }
+}
+----------
 .\src\main\java\com\smartdorm\backend\controller\DormResourceController.java:
 package com.smartdorm.backend.controller;
 
@@ -797,7 +1116,7 @@ import java.util.Map;
 @RestController
 public class HealthCheckController {
 
-    @GetMapping("/ping")
+    @GetMapping("/api/ping")
     public Map<String, String> ping() {
         return Map.of("status", "ok", "message", "Service is running!");
     }
@@ -948,7 +1267,7 @@ import org.springframework.web.bind.annotation.RestController;
  * Controller to handle user-related operations.
  */
 @RestController
-@RequestMapping("/users")
+@RequestMapping("/api/users")
 public class UserController {
 
     private final UserRepository userRepository;
@@ -973,6 +1292,52 @@ public class UserController {
         // Map the entity to a safe DTO (without password)
         UserDto userDto = new UserDto(user.getId(), user.getStudentId(), user.getName(), user.getRole(), user.getGender(), user.getCollege());
         return ResponseEntity.ok(userDto);
+    }
+}
+----------
+.\src\main\java\com\smartdorm\backend\controller\ViewController.java:
+package com.smartdorm.backend.controller;
+
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.GetMapping;
+
+@Controller
+public class ViewController {
+
+    /**
+     * 鏄剧ず鑷畾涔夌殑鐧诲綍椤甸潰銆?
+     * 璺緞涓?SecurityConfig 涓殑 .loginPage("/login") 瀵瑰簲銆?
+     */
+    @GetMapping("/login")
+    public String loginPage() {
+        return "login"; // 杩斿洖 templates/login.html
+    }
+
+    /**
+     * 鐧诲綍鎴愬姛鍚庣殑缁熶竴鍏ュ彛鐐广€?
+     * 鏍规嵁鐢ㄦ埛瑙掕壊閲嶅畾鍚戝埌鍚勮嚜鐨勪华琛ㄧ洏銆?
+     * 璺緞涓?SecurityConfig 涓殑 .defaultSuccessUrl("/view/home", true) 瀵瑰簲銆?
+     */
+    @GetMapping(value = {"/", "/view/home"})
+    public String home(Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return "redirect:/login";
+        }
+
+        // 妫€鏌ョ敤鎴疯鑹插苟閲嶅畾鍚?
+        for (GrantedAuthority auth : authentication.getAuthorities()) {
+            if ("ROLE_ADMIN".equals(auth.getAuthority())) {
+                return "redirect:/view/admin/dashboard";
+            }
+            if ("ROLE_STUDENT".equals(auth.getAuthority())) {
+                return "redirect:/view/student/dashboard";
+            }
+        }
+
+        // 榛樿鍥為€€锛堢悊璁轰笂涓嶅簲鍙戠敓锛?
+        return "redirect:/login?error=true";
     }
 }
 ----------
@@ -1900,12 +2265,14 @@ import com.smartdorm.backend.entity.Bed;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.UUID;
 
 @Repository
 public interface BedRepository extends JpaRepository<Bed, UUID> {
     // 鐢ㄤ簬妫€鏌ユ埧闂翠笅鏄惁鏈夊簥浣?
     boolean existsByRoomId(UUID roomId);
+    List<Bed> findByRoomIdOrderByBedNumberAsc(UUID roomId);
 }
 ----------
 .\src\main\java\com\smartdorm\backend\repository\ContentArticleRepository.java:
@@ -1943,12 +2310,14 @@ import com.smartdorm.backend.entity.DormRoom;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.UUID;
 
 @Repository
 public interface DormRoomRepository extends JpaRepository<DormRoom, UUID> {
     // 鐢ㄤ簬妫€鏌ユゼ鏍嬩笅鏄惁鏈夋埧闂达紝姣斿姞杞芥暣涓垪琛ㄦ洿楂樻晥
     boolean existsByBuildingId(UUID buildingId);
+    List<DormRoom> findAll();
 }
 ----------
 .\src\main\java\com\smartdorm\backend\repository\FeedbackRepository.java:
@@ -2608,6 +2977,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -2716,6 +3086,43 @@ public class DormResourceService {
         }
         bedRepository.deleteById(bedId);
     }
+    public record RoomDetailDto(UUID id, String roomNumber, int capacity, String genderType, UUID buildingId, String buildingName) {}
+
+    public List<DormRoomDto> getAllRooms() {
+        return roomRepository.findAll().stream().map(dormMapper::toDto).collect(Collectors.toList());
+    }
+
+    // New method to get enhanced room details for the view
+    public List<RoomDetailDto> getRoomDetails() {
+        List<DormRoom> rooms = roomRepository.findAll();
+        // To avoid N+1 queries, fetch all buildings and put them in a map
+        Map<UUID, String> buildingNames = buildingRepository.findAll().stream()
+                .collect(Collectors.toMap(DormBuilding::getId, DormBuilding::getName));
+
+        return rooms.stream()
+                .map(room -> new RoomDetailDto(
+                        room.getId(),
+                        room.getRoomNumber(),
+                        room.getCapacity(),
+                        room.getGenderType(),
+                        room.getBuilding().getId(),
+                        buildingNames.getOrDefault(room.getBuilding().getId(), "N/A")
+                ))
+                .collect(Collectors.toList());
+    }
+
+    public DormRoomDto getRoomById(UUID roomId) {
+        return roomRepository.findById(roomId)
+                .map(dormMapper::toDto)
+                .orElseThrow(() -> new ResourceNotFoundException("Room not found with id: " + roomId));
+    }
+
+    public List<BedDto> getBedsForRoom(UUID roomId) {
+        return bedRepository.findByRoomIdOrderByBedNumberAsc(roomId).stream()
+                .map(dormMapper::toDto)
+                .collect(Collectors.toList());
+    }
+
 }
 ----------
 .\src\main\java\com\smartdorm\backend\service\StudentService.java:
@@ -2965,8 +3372,6 @@ public class SupportService {
 .\src\main\resources\application.yml:
 server:
   port: 8080 # 搴旂敤鐩戝惉鐨勭鍙?
-  servlet:
-    context-path: /api # 鎵€鏈堿PI鐨勬牴璺緞
 
 spring:
   # --- Datasource Configuration ---
@@ -3000,6 +3405,679 @@ logging:
  * Pico CSS 鉁?v2.1.1 (https://picocss.com)
  * Copyright 2019-2025 - Licensed under MIT
  */:host,:root{--pico-font-family-emoji:"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji";--pico-font-family-sans-serif:system-ui,"Segoe UI",Roboto,Oxygen,Ubuntu,Cantarell,Helvetica,Arial,"Helvetica Neue",sans-serif,var(--pico-font-family-emoji);--pico-font-family-monospace:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace,var(--pico-font-family-emoji);--pico-font-family:var(--pico-font-family-sans-serif);--pico-line-height:1.5;--pico-font-weight:400;--pico-font-size:100%;--pico-text-underline-offset:0.1rem;--pico-border-radius:0.25rem;--pico-border-width:0.0625rem;--pico-outline-width:0.125rem;--pico-transition:0.2s ease-in-out;--pico-spacing:1rem;--pico-typography-spacing-vertical:1rem;--pico-block-spacing-vertical:var(--pico-spacing);--pico-block-spacing-horizontal:var(--pico-spacing);--pico-grid-column-gap:var(--pico-spacing);--pico-grid-row-gap:var(--pico-spacing);--pico-form-element-spacing-vertical:0.75rem;--pico-form-element-spacing-horizontal:1rem;--pico-group-box-shadow:0 0 0 rgba(0, 0, 0, 0);--pico-group-box-shadow-focus-with-button:0 0 0 var(--pico-outline-width) var(--pico-primary-focus);--pico-group-box-shadow-focus-with-input:0 0 0 0.0625rem var(--pico-form-element-border-color);--pico-modal-overlay-backdrop-filter:blur(0.375rem);--pico-nav-element-spacing-vertical:1rem;--pico-nav-element-spacing-horizontal:0.5rem;--pico-nav-link-spacing-vertical:0.5rem;--pico-nav-link-spacing-horizontal:0.5rem;--pico-nav-breadcrumb-divider:">";--pico-icon-checkbox:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='rgb(255, 255, 255)' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E");--pico-icon-minus:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='rgb(255, 255, 255)' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='5' y1='12' x2='19' y2='12'%3E%3C/line%3E%3C/svg%3E");--pico-icon-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='rgb(136, 145, 164)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");--pico-icon-date:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='rgb(136, 145, 164)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2' ry='2'%3E%3C/rect%3E%3Cline x1='16' y1='2' x2='16' y2='6'%3E%3C/line%3E%3Cline x1='8' y1='2' x2='8' y2='6'%3E%3C/line%3E%3Cline x1='3' y1='10' x2='21' y2='10'%3E%3C/line%3E%3C/svg%3E");--pico-icon-time:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='rgb(136, 145, 164)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'%3E%3C/circle%3E%3Cpolyline points='12 6 12 12 16 14'%3E%3C/polyline%3E%3C/svg%3E");--pico-icon-search:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='rgb(136, 145, 164)' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'%3E%3C/circle%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'%3E%3C/line%3E%3C/svg%3E");--pico-icon-close:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='rgb(136, 145, 164)' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='18' y1='6' x2='6' y2='18'%3E%3C/line%3E%3Cline x1='6' y1='6' x2='18' y2='18'%3E%3C/line%3E%3C/svg%3E");--pico-icon-loading:url("data:image/svg+xml,%3Csvg fill='none' height='24' width='24' viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg' %3E%3Cstyle%3E g %7B animation: rotate 2s linear infinite; transform-origin: center center; %7D circle %7B stroke-dasharray: 75,100; stroke-dashoffset: -5; animation: dash 1.5s ease-in-out infinite; stroke-linecap: round; %7D @keyframes rotate %7B 0%25 %7B transform: rotate(0deg); %7D 100%25 %7B transform: rotate(360deg); %7D %7D @keyframes dash %7B 0%25 %7B stroke-dasharray: 1,100; stroke-dashoffset: 0; %7D 50%25 %7B stroke-dasharray: 44.5,100; stroke-dashoffset: -17.5; %7D 100%25 %7B stroke-dasharray: 44.5,100; stroke-dashoffset: -62; %7D %7D %3C/style%3E%3Cg%3E%3Ccircle cx='12' cy='12' r='10' fill='none' stroke='rgb(136, 145, 164)' stroke-width='4' /%3E%3C/g%3E%3C/svg%3E")}@media (min-width:576px){:host,:root{--pico-font-size:106.25%}}@media (min-width:768px){:host,:root{--pico-font-size:112.5%}}@media (min-width:1024px){:host,:root{--pico-font-size:118.75%}}@media (min-width:1280px){:host,:root{--pico-font-size:125%}}@media (min-width:1536px){:host,:root{--pico-font-size:131.25%}}a{--pico-text-decoration:underline}a.contrast,a.secondary{--pico-text-decoration:underline}small{--pico-font-size:0.875em}h1,h2,h3,h4,h5,h6{--pico-font-weight:700}h1{--pico-font-size:2rem;--pico-line-height:1.125;--pico-typography-spacing-top:3rem}h2{--pico-font-size:1.75rem;--pico-line-height:1.15;--pico-typography-spacing-top:2.625rem}h3{--pico-font-size:1.5rem;--pico-line-height:1.175;--pico-typography-spacing-top:2.25rem}h4{--pico-font-size:1.25rem;--pico-line-height:1.2;--pico-typography-spacing-top:1.874rem}h5{--pico-font-size:1.125rem;--pico-line-height:1.225;--pico-typography-spacing-top:1.6875rem}h6{--pico-font-size:1rem;--pico-line-height:1.25;--pico-typography-spacing-top:1.5rem}tfoot td,tfoot th,thead td,thead th{--pico-font-weight:600;--pico-border-width:0.1875rem}code,kbd,pre,samp{--pico-font-family:var(--pico-font-family-monospace)}kbd{--pico-font-weight:bolder}:where(select,textarea),input:not([type=submit],[type=button],[type=reset],[type=checkbox],[type=radio],[type=file]){--pico-outline-width:0.0625rem}[type=search]{--pico-border-radius:5rem}[type=checkbox],[type=radio]{--pico-border-width:0.125rem}[type=checkbox][role=switch]{--pico-border-width:0.1875rem}details.dropdown summary:not([role=button]){--pico-outline-width:0.0625rem}nav details.dropdown summary:focus-visible{--pico-outline-width:0.125rem}[role=search]{--pico-border-radius:5rem}[role=group]:has(button.secondary:focus,[type=submit].secondary:focus,[type=button].secondary:focus,[role=button].secondary:focus),[role=search]:has(button.secondary:focus,[type=submit].secondary:focus,[type=button].secondary:focus,[role=button].secondary:focus){--pico-group-box-shadow-focus-with-button:0 0 0 var(--pico-outline-width) var(--pico-secondary-focus)}[role=group]:has(button.contrast:focus,[type=submit].contrast:focus,[type=button].contrast:focus,[role=button].contrast:focus),[role=search]:has(button.contrast:focus,[type=submit].contrast:focus,[type=button].contrast:focus,[role=button].contrast:focus){--pico-group-box-shadow-focus-with-button:0 0 0 var(--pico-outline-width) var(--pico-contrast-focus)}[role=group] [role=button],[role=group] [type=button],[role=group] [type=submit],[role=group] button,[role=search] [role=button],[role=search] [type=button],[role=search] [type=submit],[role=search] button{--pico-form-element-spacing-horizontal:2rem}details summary[role=button]:not(.outline)::after{filter:brightness(0) invert(1)}[aria-busy=true]:not(input,select,textarea):is(button,[type=submit],[type=button],[type=reset],[role=button]):not(.outline)::before{filter:brightness(0) invert(1)}:host(:not([data-theme=dark])),:root:not([data-theme=dark]),[data-theme=light]{color-scheme:light;--pico-background-color:#fff;--pico-color:#373c44;--pico-text-selection-color:rgba(2, 154, 232, 0.25);--pico-muted-color:#646b79;--pico-muted-border-color:rgb(231, 234, 239.5);--pico-primary:#0172ad;--pico-primary-background:#0172ad;--pico-primary-border:var(--pico-primary-background);--pico-primary-underline:rgba(1, 114, 173, 0.5);--pico-primary-hover:#015887;--pico-primary-hover-background:#02659a;--pico-primary-hover-border:var(--pico-primary-hover-background);--pico-primary-hover-underline:var(--pico-primary-hover);--pico-primary-focus:rgba(2, 154, 232, 0.5);--pico-primary-inverse:#fff;--pico-secondary:#5d6b89;--pico-secondary-background:#525f7a;--pico-secondary-border:var(--pico-secondary-background);--pico-secondary-underline:rgba(93, 107, 137, 0.5);--pico-secondary-hover:#48536b;--pico-secondary-hover-background:#48536b;--pico-secondary-hover-border:var(--pico-secondary-hover-background);--pico-secondary-hover-underline:var(--pico-secondary-hover);--pico-secondary-focus:rgba(93, 107, 137, 0.25);--pico-secondary-inverse:#fff;--pico-contrast:#181c25;--pico-contrast-background:#181c25;--pico-contrast-border:var(--pico-contrast-background);--pico-contrast-underline:rgba(24, 28, 37, 0.5);--pico-contrast-hover:#000;--pico-contrast-hover-background:#000;--pico-contrast-hover-border:var(--pico-contrast-hover-background);--pico-contrast-hover-underline:var(--pico-secondary-hover);--pico-contrast-focus:rgba(93, 107, 137, 0.25);--pico-contrast-inverse:#fff;--pico-box-shadow:0.0145rem 0.029rem 0.174rem rgba(129, 145, 181, 0.01698),0.0335rem 0.067rem 0.402rem rgba(129, 145, 181, 0.024),0.0625rem 0.125rem 0.75rem rgba(129, 145, 181, 0.03),0.1125rem 0.225rem 1.35rem rgba(129, 145, 181, 0.036),0.2085rem 0.417rem 2.502rem rgba(129, 145, 181, 0.04302),0.5rem 1rem 6rem rgba(129, 145, 181, 0.06),0 0 0 0.0625rem rgba(129, 145, 181, 0.015);--pico-h1-color:#2d3138;--pico-h2-color:#373c44;--pico-h3-color:#424751;--pico-h4-color:#4d535e;--pico-h5-color:#5c6370;--pico-h6-color:#646b79;--pico-mark-background-color:rgb(252.5, 230.5, 191.5);--pico-mark-color:#0f1114;--pico-ins-color:rgb(28.5, 105.5, 84);--pico-del-color:rgb(136, 56.5, 53);--pico-blockquote-border-color:var(--pico-muted-border-color);--pico-blockquote-footer-color:var(--pico-muted-color);--pico-button-box-shadow:0 0 0 rgba(0, 0, 0, 0);--pico-button-hover-box-shadow:0 0 0 rgba(0, 0, 0, 0);--pico-table-border-color:var(--pico-muted-border-color);--pico-table-row-stripped-background-color:rgba(111, 120, 135, 0.0375);--pico-code-background-color:rgb(243, 244.5, 246.75);--pico-code-color:#646b79;--pico-code-kbd-background-color:var(--pico-color);--pico-code-kbd-color:var(--pico-background-color);--pico-form-element-background-color:rgb(251, 251.5, 252.25);--pico-form-element-selected-background-color:#dfe3eb;--pico-form-element-border-color:#cfd5e2;--pico-form-element-color:#23262c;--pico-form-element-placeholder-color:var(--pico-muted-color);--pico-form-element-active-background-color:#fff;--pico-form-element-active-border-color:var(--pico-primary-border);--pico-form-element-focus-color:var(--pico-primary-border);--pico-form-element-disabled-opacity:0.5;--pico-form-element-invalid-border-color:rgb(183.5, 105.5, 106.5);--pico-form-element-invalid-active-border-color:rgb(200.25, 79.25, 72.25);--pico-form-element-invalid-focus-color:var(--pico-form-element-invalid-active-border-color);--pico-form-element-valid-border-color:rgb(76, 154.5, 137.5);--pico-form-element-valid-active-border-color:rgb(39, 152.75, 118.75);--pico-form-element-valid-focus-color:var(--pico-form-element-valid-active-border-color);--pico-switch-background-color:#bfc7d9;--pico-switch-checked-background-color:var(--pico-primary-background);--pico-switch-color:#fff;--pico-switch-thumb-box-shadow:0 0 0 rgba(0, 0, 0, 0);--pico-range-border-color:#dfe3eb;--pico-range-active-border-color:#bfc7d9;--pico-range-thumb-border-color:var(--pico-background-color);--pico-range-thumb-color:var(--pico-secondary-background);--pico-range-thumb-active-color:var(--pico-primary-background);--pico-accordion-border-color:var(--pico-muted-border-color);--pico-accordion-active-summary-color:var(--pico-primary-hover);--pico-accordion-close-summary-color:var(--pico-color);--pico-accordion-open-summary-color:var(--pico-muted-color);--pico-card-background-color:var(--pico-background-color);--pico-card-border-color:var(--pico-muted-border-color);--pico-card-box-shadow:var(--pico-box-shadow);--pico-card-sectioning-background-color:rgb(251, 251.5, 252.25);--pico-dropdown-background-color:#fff;--pico-dropdown-border-color:#eff1f4;--pico-dropdown-box-shadow:var(--pico-box-shadow);--pico-dropdown-color:var(--pico-color);--pico-dropdown-hover-background-color:#eff1f4;--pico-loading-spinner-opacity:0.5;--pico-modal-overlay-background-color:rgba(232, 234, 237, 0.75);--pico-progress-background-color:#dfe3eb;--pico-progress-color:var(--pico-primary-background);--pico-tooltip-background-color:var(--pico-contrast-background);--pico-tooltip-color:var(--pico-contrast-inverse);--pico-icon-valid:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='rgb(76, 154.5, 137.5)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E");--pico-icon-invalid:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='rgb(200.25, 79.25, 72.25)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'%3E%3C/circle%3E%3Cline x1='12' y1='8' x2='12' y2='12'%3E%3C/line%3E%3Cline x1='12' y1='16' x2='12.01' y2='16'%3E%3C/line%3E%3C/svg%3E")}:host(:not([data-theme=dark])) input:is([type=submit],[type=button],[type=reset],[type=checkbox],[type=radio],[type=file]),:root:not([data-theme=dark]) input:is([type=submit],[type=button],[type=reset],[type=checkbox],[type=radio],[type=file]),[data-theme=light] input:is([type=submit],[type=button],[type=reset],[type=checkbox],[type=radio],[type=file]){--pico-form-element-focus-color:var(--pico-primary-focus)}@media only screen and (prefers-color-scheme:dark){:host(:not([data-theme])),:root:not([data-theme]){color-scheme:dark;--pico-background-color:rgb(19, 22.5, 30.5);--pico-color:#c2c7d0;--pico-text-selection-color:rgba(1, 170, 255, 0.1875);--pico-muted-color:#7b8495;--pico-muted-border-color:#202632;--pico-primary:#01aaff;--pico-primary-background:#0172ad;--pico-primary-border:var(--pico-primary-background);--pico-primary-underline:rgba(1, 170, 255, 0.5);--pico-primary-hover:#79c0ff;--pico-primary-hover-background:#017fc0;--pico-primary-hover-border:var(--pico-primary-hover-background);--pico-primary-hover-underline:var(--pico-primary-hover);--pico-primary-focus:rgba(1, 170, 255, 0.375);--pico-primary-inverse:#fff;--pico-secondary:#969eaf;--pico-secondary-background:#525f7a;--pico-secondary-border:var(--pico-secondary-background);--pico-secondary-underline:rgba(150, 158, 175, 0.5);--pico-secondary-hover:#b3b9c5;--pico-secondary-hover-background:#5d6b89;--pico-secondary-hover-border:var(--pico-secondary-hover-background);--pico-secondary-hover-underline:var(--pico-secondary-hover);--pico-secondary-focus:rgba(144, 158, 190, 0.25);--pico-secondary-inverse:#fff;--pico-contrast:#dfe3eb;--pico-contrast-background:#eff1f4;--pico-contrast-border:var(--pico-contrast-background);--pico-contrast-underline:rgba(223, 227, 235, 0.5);--pico-contrast-hover:#fff;--pico-contrast-hover-background:#fff;--pico-contrast-hover-border:var(--pico-contrast-hover-background);--pico-contrast-hover-underline:var(--pico-contrast-hover);--pico-contrast-focus:rgba(207, 213, 226, 0.25);--pico-contrast-inverse:#000;--pico-box-shadow:0.0145rem 0.029rem 0.174rem rgba(7, 8.5, 12, 0.01698),0.0335rem 0.067rem 0.402rem rgba(7, 8.5, 12, 0.024),0.0625rem 0.125rem 0.75rem rgba(7, 8.5, 12, 0.03),0.1125rem 0.225rem 1.35rem rgba(7, 8.5, 12, 0.036),0.2085rem 0.417rem 2.502rem rgba(7, 8.5, 12, 0.04302),0.5rem 1rem 6rem rgba(7, 8.5, 12, 0.06),0 0 0 0.0625rem rgba(7, 8.5, 12, 0.015);--pico-h1-color:#f0f1f3;--pico-h2-color:#e0e3e7;--pico-h3-color:#c2c7d0;--pico-h4-color:#b3b9c5;--pico-h5-color:#a4acba;--pico-h6-color:#8891a4;--pico-mark-background-color:#014063;--pico-mark-color:#fff;--pico-ins-color:#62af9a;--pico-del-color:rgb(205.5, 126, 123);--pico-blockquote-border-color:var(--pico-muted-border-color);--pico-blockquote-footer-color:var(--pico-muted-color);--pico-button-box-shadow:0 0 0 rgba(0, 0, 0, 0);--pico-button-hover-box-shadow:0 0 0 rgba(0, 0, 0, 0);--pico-table-border-color:var(--pico-muted-border-color);--pico-table-row-stripped-background-color:rgba(111, 120, 135, 0.0375);--pico-code-background-color:rgb(26, 30.5, 40.25);--pico-code-color:#8891a4;--pico-code-kbd-background-color:var(--pico-color);--pico-code-kbd-color:var(--pico-background-color);--pico-form-element-background-color:rgb(28, 33, 43.5);--pico-form-element-selected-background-color:#2a3140;--pico-form-element-border-color:#2a3140;--pico-form-element-color:#e0e3e7;--pico-form-element-placeholder-color:#8891a4;--pico-form-element-active-background-color:rgb(26, 30.5, 40.25);--pico-form-element-active-border-color:var(--pico-primary-border);--pico-form-element-focus-color:var(--pico-primary-border);--pico-form-element-disabled-opacity:0.5;--pico-form-element-invalid-border-color:rgb(149.5, 74, 80);--pico-form-element-invalid-active-border-color:rgb(183.25, 63.5, 59);--pico-form-element-invalid-focus-color:var(--pico-form-element-invalid-active-border-color);--pico-form-element-valid-border-color:#2a7b6f;--pico-form-element-valid-active-border-color:rgb(22, 137, 105.5);--pico-form-element-valid-focus-color:var(--pico-form-element-valid-active-border-color);--pico-switch-background-color:#333c4e;--pico-switch-checked-background-color:var(--pico-primary-background);--pico-switch-color:#fff;--pico-switch-thumb-box-shadow:0 0 0 rgba(0, 0, 0, 0);--pico-range-border-color:#202632;--pico-range-active-border-color:#2a3140;--pico-range-thumb-border-color:var(--pico-background-color);--pico-range-thumb-color:var(--pico-secondary-background);--pico-range-thumb-active-color:var(--pico-primary-background);--pico-accordion-border-color:var(--pico-muted-border-color);--pico-accordion-active-summary-color:var(--pico-primary-hover);--pico-accordion-close-summary-color:var(--pico-color);--pico-accordion-open-summary-color:var(--pico-muted-color);--pico-card-background-color:#181c25;--pico-card-border-color:var(--pico-card-background-color);--pico-card-box-shadow:var(--pico-box-shadow);--pico-card-sectioning-background-color:rgb(26, 30.5, 40.25);--pico-dropdown-background-color:#181c25;--pico-dropdown-border-color:#202632;--pico-dropdown-box-shadow:var(--pico-box-shadow);--pico-dropdown-color:var(--pico-color);--pico-dropdown-hover-background-color:#202632;--pico-loading-spinner-opacity:0.5;--pico-modal-overlay-background-color:rgba(7.5, 8.5, 10, 0.75);--pico-progress-background-color:#202632;--pico-progress-color:var(--pico-primary-background);--pico-tooltip-background-color:var(--pico-contrast-background);--pico-tooltip-color:var(--pico-contrast-inverse);--pico-icon-valid:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='rgb(42, 123, 111)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E");--pico-icon-invalid:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='rgb(149.5, 74, 80)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'%3E%3C/circle%3E%3Cline x1='12' y1='8' x2='12' y2='12'%3E%3C/line%3E%3Cline x1='12' y1='16' x2='12.01' y2='16'%3E%3C/line%3E%3C/svg%3E")}:host(:not([data-theme])) input:is([type=submit],[type=button],[type=reset],[type=checkbox],[type=radio],[type=file]),:root:not([data-theme]) input:is([type=submit],[type=button],[type=reset],[type=checkbox],[type=radio],[type=file]){--pico-form-element-focus-color:var(--pico-primary-focus)}:host(:not([data-theme])) details summary[role=button].contrast:not(.outline)::after,:root:not([data-theme]) details summary[role=button].contrast:not(.outline)::after{filter:brightness(0)}:host(:not([data-theme])) [aria-busy=true]:not(input,select,textarea).contrast:is(button,[type=submit],[type=button],[type=reset],[role=button]):not(.outline)::before,:root:not([data-theme]) [aria-busy=true]:not(input,select,textarea).contrast:is(button,[type=submit],[type=button],[type=reset],[role=button]):not(.outline)::before{filter:brightness(0)}}[data-theme=dark]{color-scheme:dark;--pico-background-color:rgb(19, 22.5, 30.5);--pico-color:#c2c7d0;--pico-text-selection-color:rgba(1, 170, 255, 0.1875);--pico-muted-color:#7b8495;--pico-muted-border-color:#202632;--pico-primary:#01aaff;--pico-primary-background:#0172ad;--pico-primary-border:var(--pico-primary-background);--pico-primary-underline:rgba(1, 170, 255, 0.5);--pico-primary-hover:#79c0ff;--pico-primary-hover-background:#017fc0;--pico-primary-hover-border:var(--pico-primary-hover-background);--pico-primary-hover-underline:var(--pico-primary-hover);--pico-primary-focus:rgba(1, 170, 255, 0.375);--pico-primary-inverse:#fff;--pico-secondary:#969eaf;--pico-secondary-background:#525f7a;--pico-secondary-border:var(--pico-secondary-background);--pico-secondary-underline:rgba(150, 158, 175, 0.5);--pico-secondary-hover:#b3b9c5;--pico-secondary-hover-background:#5d6b89;--pico-secondary-hover-border:var(--pico-secondary-hover-background);--pico-secondary-hover-underline:var(--pico-secondary-hover);--pico-secondary-focus:rgba(144, 158, 190, 0.25);--pico-secondary-inverse:#fff;--pico-contrast:#dfe3eb;--pico-contrast-background:#eff1f4;--pico-contrast-border:var(--pico-contrast-background);--pico-contrast-underline:rgba(223, 227, 235, 0.5);--pico-contrast-hover:#fff;--pico-contrast-hover-background:#fff;--pico-contrast-hover-border:var(--pico-contrast-hover-background);--pico-contrast-hover-underline:var(--pico-contrast-hover);--pico-contrast-focus:rgba(207, 213, 226, 0.25);--pico-contrast-inverse:#000;--pico-box-shadow:0.0145rem 0.029rem 0.174rem rgba(7, 8.5, 12, 0.01698),0.0335rem 0.067rem 0.402rem rgba(7, 8.5, 12, 0.024),0.0625rem 0.125rem 0.75rem rgba(7, 8.5, 12, 0.03),0.1125rem 0.225rem 1.35rem rgba(7, 8.5, 12, 0.036),0.2085rem 0.417rem 2.502rem rgba(7, 8.5, 12, 0.04302),0.5rem 1rem 6rem rgba(7, 8.5, 12, 0.06),0 0 0 0.0625rem rgba(7, 8.5, 12, 0.015);--pico-h1-color:#f0f1f3;--pico-h2-color:#e0e3e7;--pico-h3-color:#c2c7d0;--pico-h4-color:#b3b9c5;--pico-h5-color:#a4acba;--pico-h6-color:#8891a4;--pico-mark-background-color:#014063;--pico-mark-color:#fff;--pico-ins-color:#62af9a;--pico-del-color:rgb(205.5, 126, 123);--pico-blockquote-border-color:var(--pico-muted-border-color);--pico-blockquote-footer-color:var(--pico-muted-color);--pico-button-box-shadow:0 0 0 rgba(0, 0, 0, 0);--pico-button-hover-box-shadow:0 0 0 rgba(0, 0, 0, 0);--pico-table-border-color:var(--pico-muted-border-color);--pico-table-row-stripped-background-color:rgba(111, 120, 135, 0.0375);--pico-code-background-color:rgb(26, 30.5, 40.25);--pico-code-color:#8891a4;--pico-code-kbd-background-color:var(--pico-color);--pico-code-kbd-color:var(--pico-background-color);--pico-form-element-background-color:rgb(28, 33, 43.5);--pico-form-element-selected-background-color:#2a3140;--pico-form-element-border-color:#2a3140;--pico-form-element-color:#e0e3e7;--pico-form-element-placeholder-color:#8891a4;--pico-form-element-active-background-color:rgb(26, 30.5, 40.25);--pico-form-element-active-border-color:var(--pico-primary-border);--pico-form-element-focus-color:var(--pico-primary-border);--pico-form-element-disabled-opacity:0.5;--pico-form-element-invalid-border-color:rgb(149.5, 74, 80);--pico-form-element-invalid-active-border-color:rgb(183.25, 63.5, 59);--pico-form-element-invalid-focus-color:var(--pico-form-element-invalid-active-border-color);--pico-form-element-valid-border-color:#2a7b6f;--pico-form-element-valid-active-border-color:rgb(22, 137, 105.5);--pico-form-element-valid-focus-color:var(--pico-form-element-valid-active-border-color);--pico-switch-background-color:#333c4e;--pico-switch-checked-background-color:var(--pico-primary-background);--pico-switch-color:#fff;--pico-switch-thumb-box-shadow:0 0 0 rgba(0, 0, 0, 0);--pico-range-border-color:#202632;--pico-range-active-border-color:#2a3140;--pico-range-thumb-border-color:var(--pico-background-color);--pico-range-thumb-color:var(--pico-secondary-background);--pico-range-thumb-active-color:var(--pico-primary-background);--pico-accordion-border-color:var(--pico-muted-border-color);--pico-accordion-active-summary-color:var(--pico-primary-hover);--pico-accordion-close-summary-color:var(--pico-color);--pico-accordion-open-summary-color:var(--pico-muted-color);--pico-card-background-color:#181c25;--pico-card-border-color:var(--pico-card-background-color);--pico-card-box-shadow:var(--pico-box-shadow);--pico-card-sectioning-background-color:rgb(26, 30.5, 40.25);--pico-dropdown-background-color:#181c25;--pico-dropdown-border-color:#202632;--pico-dropdown-box-shadow:var(--pico-box-shadow);--pico-dropdown-color:var(--pico-color);--pico-dropdown-hover-background-color:#202632;--pico-loading-spinner-opacity:0.5;--pico-modal-overlay-background-color:rgba(7.5, 8.5, 10, 0.75);--pico-progress-background-color:#202632;--pico-progress-color:var(--pico-primary-background);--pico-tooltip-background-color:var(--pico-contrast-background);--pico-tooltip-color:var(--pico-contrast-inverse);--pico-icon-valid:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='rgb(42, 123, 111)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E");--pico-icon-invalid:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='rgb(149.5, 74, 80)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'%3E%3C/circle%3E%3Cline x1='12' y1='8' x2='12' y2='12'%3E%3C/line%3E%3Cline x1='12' y1='16' x2='12.01' y2='16'%3E%3C/line%3E%3C/svg%3E")}[data-theme=dark] input:is([type=submit],[type=button],[type=reset],[type=checkbox],[type=radio],[type=file]){--pico-form-element-focus-color:var(--pico-primary-focus)}[data-theme=dark] details summary[role=button].contrast:not(.outline)::after{filter:brightness(0)}[data-theme=dark] [aria-busy=true]:not(input,select,textarea).contrast:is(button,[type=submit],[type=button],[type=reset],[role=button]):not(.outline)::before{filter:brightness(0)}[type=checkbox],[type=radio],[type=range],progress{accent-color:var(--pico-primary)}*,::after,::before{box-sizing:border-box;background-repeat:no-repeat}::after,::before{text-decoration:inherit;vertical-align:inherit}:where(:host),:where(:root){-webkit-tap-highlight-color:transparent;-webkit-text-size-adjust:100%;-moz-text-size-adjust:100%;text-size-adjust:100%;background-color:var(--pico-background-color);color:var(--pico-color);font-weight:var(--pico-font-weight);font-size:var(--pico-font-size);line-height:var(--pico-line-height);font-family:var(--pico-font-family);text-underline-offset:var(--pico-text-underline-offset);text-rendering:optimizeLegibility;overflow-wrap:break-word;-moz-tab-size:4;-o-tab-size:4;tab-size:4}body{width:100%;margin:0}main{display:block}body>footer,body>header,body>main{padding-block:var(--pico-block-spacing-vertical)}section{margin-bottom:var(--pico-block-spacing-vertical)}.container,.container-fluid{width:100%;margin-right:auto;margin-left:auto;padding-right:var(--pico-spacing);padding-left:var(--pico-spacing)}@media (min-width:576px){.container{max-width:510px;padding-right:0;padding-left:0}}@media (min-width:768px){.container{max-width:700px}}@media (min-width:1024px){.container{max-width:950px}}@media (min-width:1280px){.container{max-width:1200px}}@media (min-width:1536px){.container{max-width:1450px}}.grid{grid-column-gap:var(--pico-grid-column-gap);grid-row-gap:var(--pico-grid-row-gap);display:grid;grid-template-columns:1fr}@media (min-width:768px){.grid{grid-template-columns:repeat(auto-fit,minmax(0%,1fr))}}.grid>*{min-width:0}.overflow-auto{overflow:auto}b,strong{font-weight:bolder}sub,sup{position:relative;font-size:.75em;line-height:0;vertical-align:baseline}sub{bottom:-.25em}sup{top:-.5em}address,blockquote,dl,ol,p,pre,table,ul{margin-top:0;margin-bottom:var(--pico-typography-spacing-vertical);color:var(--pico-color);font-style:normal;font-weight:var(--pico-font-weight)}h1,h2,h3,h4,h5,h6{margin-top:0;margin-bottom:var(--pico-typography-spacing-vertical);color:var(--pico-color);font-weight:var(--pico-font-weight);font-size:var(--pico-font-size);line-height:var(--pico-line-height);font-family:var(--pico-font-family)}h1{--pico-color:var(--pico-h1-color)}h2{--pico-color:var(--pico-h2-color)}h3{--pico-color:var(--pico-h3-color)}h4{--pico-color:var(--pico-h4-color)}h5{--pico-color:var(--pico-h5-color)}h6{--pico-color:var(--pico-h6-color)}:where(article,address,blockquote,dl,figure,form,ol,p,pre,table,ul)~:is(h1,h2,h3,h4,h5,h6){margin-top:var(--pico-typography-spacing-top)}p{margin-bottom:var(--pico-typography-spacing-vertical)}hgroup{margin-bottom:var(--pico-typography-spacing-vertical)}hgroup>*{margin-top:0;margin-bottom:0}hgroup>:not(:first-child):last-child{--pico-color:var(--pico-muted-color);--pico-font-weight:unset;font-size:1rem}:where(ol,ul) li{margin-bottom:calc(var(--pico-typography-spacing-vertical) * .25)}:where(dl,ol,ul) :where(dl,ol,ul){margin:0;margin-top:calc(var(--pico-typography-spacing-vertical) * .25)}ul li{list-style:square}mark{padding:.125rem .25rem;background-color:var(--pico-mark-background-color);color:var(--pico-mark-color);vertical-align:baseline}blockquote{display:block;margin:var(--pico-typography-spacing-vertical) 0;padding:var(--pico-spacing);border-right:none;border-left:.25rem solid var(--pico-blockquote-border-color);border-inline-start:0.25rem solid var(--pico-blockquote-border-color);border-inline-end:none}blockquote footer{margin-top:calc(var(--pico-typography-spacing-vertical) * .5);color:var(--pico-blockquote-footer-color)}abbr[title]{border-bottom:1px dotted;text-decoration:none;cursor:help}ins{color:var(--pico-ins-color);text-decoration:none}del{color:var(--pico-del-color)}::-moz-selection{background-color:var(--pico-text-selection-color)}::selection{background-color:var(--pico-text-selection-color)}:where(a:not([role=button])),[role=link]{--pico-color:var(--pico-primary);--pico-background-color:transparent;--pico-underline:var(--pico-primary-underline);outline:0;background-color:var(--pico-background-color);color:var(--pico-color);-webkit-text-decoration:var(--pico-text-decoration);text-decoration:var(--pico-text-decoration);text-decoration-color:var(--pico-underline);text-underline-offset:0.125em;transition:background-color var(--pico-transition),color var(--pico-transition),box-shadow var(--pico-transition),-webkit-text-decoration var(--pico-transition);transition:background-color var(--pico-transition),color var(--pico-transition),text-decoration var(--pico-transition),box-shadow var(--pico-transition);transition:background-color var(--pico-transition),color var(--pico-transition),text-decoration var(--pico-transition),box-shadow var(--pico-transition),-webkit-text-decoration var(--pico-transition)}:where(a:not([role=button])):is([aria-current]:not([aria-current=false]),:hover,:active,:focus),[role=link]:is([aria-current]:not([aria-current=false]),:hover,:active,:focus){--pico-color:var(--pico-primary-hover);--pico-underline:var(--pico-primary-hover-underline);--pico-text-decoration:underline}:where(a:not([role=button])):focus-visible,[role=link]:focus-visible{box-shadow:0 0 0 var(--pico-outline-width) var(--pico-primary-focus)}:where(a:not([role=button])).secondary,[role=link].secondary{--pico-color:var(--pico-secondary);--pico-underline:var(--pico-secondary-underline)}:where(a:not([role=button])).secondary:is([aria-current]:not([aria-current=false]),:hover,:active,:focus),[role=link].secondary:is([aria-current]:not([aria-current=false]),:hover,:active,:focus){--pico-color:var(--pico-secondary-hover);--pico-underline:var(--pico-secondary-hover-underline)}:where(a:not([role=button])).contrast,[role=link].contrast{--pico-color:var(--pico-contrast);--pico-underline:var(--pico-contrast-underline)}:where(a:not([role=button])).contrast:is([aria-current]:not([aria-current=false]),:hover,:active,:focus),[role=link].contrast:is([aria-current]:not([aria-current=false]),:hover,:active,:focus){--pico-color:var(--pico-contrast-hover);--pico-underline:var(--pico-contrast-hover-underline)}a[role=button]{display:inline-block}button{margin:0;overflow:visible;font-family:inherit;text-transform:none}[type=button],[type=reset],[type=submit],button{-webkit-appearance:button}[role=button],[type=button],[type=file]::file-selector-button,[type=reset],[type=submit],button{--pico-background-color:var(--pico-primary-background);--pico-border-color:var(--pico-primary-border);--pico-color:var(--pico-primary-inverse);--pico-box-shadow:var(--pico-button-box-shadow, 0 0 0 rgba(0, 0, 0, 0));padding:var(--pico-form-element-spacing-vertical) var(--pico-form-element-spacing-horizontal);border:var(--pico-border-width) solid var(--pico-border-color);border-radius:var(--pico-border-radius);outline:0;background-color:var(--pico-background-color);box-shadow:var(--pico-box-shadow);color:var(--pico-color);font-weight:var(--pico-font-weight);font-size:1rem;line-height:var(--pico-line-height);text-align:center;text-decoration:none;cursor:pointer;-webkit-user-select:none;-moz-user-select:none;user-select:none;transition:background-color var(--pico-transition),border-color var(--pico-transition),color var(--pico-transition),box-shadow var(--pico-transition)}[role=button]:is(:hover,:active,:focus),[role=button]:is([aria-current]:not([aria-current=false])),[type=button]:is(:hover,:active,:focus),[type=button]:is([aria-current]:not([aria-current=false])),[type=file]::file-selector-button:is(:hover,:active,:focus),[type=file]::file-selector-button:is([aria-current]:not([aria-current=false])),[type=reset]:is(:hover,:active,:focus),[type=reset]:is([aria-current]:not([aria-current=false])),[type=submit]:is(:hover,:active,:focus),[type=submit]:is([aria-current]:not([aria-current=false])),button:is(:hover,:active,:focus),button:is([aria-current]:not([aria-current=false])){--pico-background-color:var(--pico-primary-hover-background);--pico-border-color:var(--pico-primary-hover-border);--pico-box-shadow:var(--pico-button-hover-box-shadow, 0 0 0 rgba(0, 0, 0, 0));--pico-color:var(--pico-primary-inverse)}[role=button]:focus,[role=button]:is([aria-current]:not([aria-current=false])):focus,[type=button]:focus,[type=button]:is([aria-current]:not([aria-current=false])):focus,[type=file]::file-selector-button:focus,[type=file]::file-selector-button:is([aria-current]:not([aria-current=false])):focus,[type=reset]:focus,[type=reset]:is([aria-current]:not([aria-current=false])):focus,[type=submit]:focus,[type=submit]:is([aria-current]:not([aria-current=false])):focus,button:focus,button:is([aria-current]:not([aria-current=false])):focus{--pico-box-shadow:var(--pico-button-hover-box-shadow, 0 0 0 rgba(0, 0, 0, 0)),0 0 0 var(--pico-outline-width) var(--pico-primary-focus)}[type=button],[type=reset],[type=submit]{margin-bottom:var(--pico-spacing)}:is(button,[type=submit],[type=button],[role=button]).secondary,[type=file]::file-selector-button,[type=reset]{--pico-background-color:var(--pico-secondary-background);--pico-border-color:var(--pico-secondary-border);--pico-color:var(--pico-secondary-inverse);cursor:pointer}:is(button,[type=submit],[type=button],[role=button]).secondary:is([aria-current]:not([aria-current=false]),:hover,:active,:focus),[type=file]::file-selector-button:is([aria-current]:not([aria-current=false]),:hover,:active,:focus),[type=reset]:is([aria-current]:not([aria-current=false]),:hover,:active,:focus){--pico-background-color:var(--pico-secondary-hover-background);--pico-border-color:var(--pico-secondary-hover-border);--pico-color:var(--pico-secondary-inverse)}:is(button,[type=submit],[type=button],[role=button]).secondary:focus,:is(button,[type=submit],[type=button],[role=button]).secondary:is([aria-current]:not([aria-current=false])):focus,[type=file]::file-selector-button:focus,[type=file]::file-selector-button:is([aria-current]:not([aria-current=false])):focus,[type=reset]:focus,[type=reset]:is([aria-current]:not([aria-current=false])):focus{--pico-box-shadow:var(--pico-button-hover-box-shadow, 0 0 0 rgba(0, 0, 0, 0)),0 0 0 var(--pico-outline-width) var(--pico-secondary-focus)}:is(button,[type=submit],[type=button],[role=button]).contrast{--pico-background-color:var(--pico-contrast-background);--pico-border-color:var(--pico-contrast-border);--pico-color:var(--pico-contrast-inverse)}:is(button,[type=submit],[type=button],[role=button]).contrast:is([aria-current]:not([aria-current=false]),:hover,:active,:focus){--pico-background-color:var(--pico-contrast-hover-background);--pico-border-color:var(--pico-contrast-hover-border);--pico-color:var(--pico-contrast-inverse)}:is(button,[type=submit],[type=button],[role=button]).contrast:focus,:is(button,[type=submit],[type=button],[role=button]).contrast:is([aria-current]:not([aria-current=false])):focus{--pico-box-shadow:var(--pico-button-hover-box-shadow, 0 0 0 rgba(0, 0, 0, 0)),0 0 0 var(--pico-outline-width) var(--pico-contrast-focus)}:is(button,[type=submit],[type=button],[role=button]).outline,[type=reset].outline{--pico-background-color:transparent;--pico-color:var(--pico-primary);--pico-border-color:var(--pico-primary)}:is(button,[type=submit],[type=button],[role=button]).outline:is([aria-current]:not([aria-current=false]),:hover,:active,:focus),[type=reset].outline:is([aria-current]:not([aria-current=false]),:hover,:active,:focus){--pico-background-color:transparent;--pico-color:var(--pico-primary-hover);--pico-border-color:var(--pico-primary-hover)}:is(button,[type=submit],[type=button],[role=button]).outline.secondary,[type=reset].outline{--pico-color:var(--pico-secondary);--pico-border-color:var(--pico-secondary)}:is(button,[type=submit],[type=button],[role=button]).outline.secondary:is([aria-current]:not([aria-current=false]),:hover,:active,:focus),[type=reset].outline:is([aria-current]:not([aria-current=false]),:hover,:active,:focus){--pico-color:var(--pico-secondary-hover);--pico-border-color:var(--pico-secondary-hover)}:is(button,[type=submit],[type=button],[role=button]).outline.contrast{--pico-color:var(--pico-contrast);--pico-border-color:var(--pico-contrast)}:is(button,[type=submit],[type=button],[role=button]).outline.contrast:is([aria-current]:not([aria-current=false]),:hover,:active,:focus){--pico-color:var(--pico-contrast-hover);--pico-border-color:var(--pico-contrast-hover)}:where(button,[type=submit],[type=reset],[type=button],[role=button])[disabled],:where(fieldset[disabled]) :is(button,[type=submit],[type=button],[type=reset],[role=button]){opacity:.5;pointer-events:none}:where(table){width:100%;border-collapse:collapse;border-spacing:0;text-indent:0}td,th{padding:calc(var(--pico-spacing)/ 2) var(--pico-spacing);border-bottom:var(--pico-border-width) solid var(--pico-table-border-color);background-color:var(--pico-background-color);color:var(--pico-color);font-weight:var(--pico-font-weight);text-align:left;text-align:start}tfoot td,tfoot th{border-top:var(--pico-border-width) solid var(--pico-table-border-color);border-bottom:0}table.striped tbody tr:nth-child(odd) td,table.striped tbody tr:nth-child(odd) th{background-color:var(--pico-table-row-stripped-background-color)}:where(audio,canvas,iframe,img,svg,video){vertical-align:middle}audio,video{display:inline-block}audio:not([controls]){display:none;height:0}:where(iframe){border-style:none}img{max-width:100%;height:auto;border-style:none}:where(svg:not([fill])){fill:currentColor}svg:not(:host),svg:not(:root){overflow:hidden}code,kbd,pre,samp{font-size:.875em;font-family:var(--pico-font-family)}pre code,pre samp{font-size:inherit;font-family:inherit}pre{-ms-overflow-style:scrollbar;overflow:auto}code,kbd,pre,samp{border-radius:var(--pico-border-radius);background:var(--pico-code-background-color);color:var(--pico-code-color);font-weight:var(--pico-font-weight);line-height:initial}code,kbd,samp{display:inline-block;padding:.375rem}pre{display:block;margin-bottom:var(--pico-spacing);overflow-x:auto}pre>code,pre>samp{display:block;padding:var(--pico-spacing);background:0 0;line-height:var(--pico-line-height)}kbd{background-color:var(--pico-code-kbd-background-color);color:var(--pico-code-kbd-color);vertical-align:baseline}figure{display:block;margin:0;padding:0}figure figcaption{padding:calc(var(--pico-spacing) * .5) 0;color:var(--pico-muted-color)}hr{height:0;margin:var(--pico-typography-spacing-vertical) 0;border:0;border-top:1px solid var(--pico-muted-border-color);color:inherit}[hidden],template{display:none!important}canvas{display:inline-block}input,optgroup,select,textarea{margin:0;font-size:1rem;line-height:var(--pico-line-height);font-family:inherit;letter-spacing:inherit}input{overflow:visible}select{text-transform:none}legend{max-width:100%;padding:0;color:inherit;white-space:normal}textarea{overflow:auto}[type=checkbox],[type=radio]{padding:0}::-webkit-inner-spin-button,::-webkit-outer-spin-button{height:auto}[type=search]{-webkit-appearance:textfield;outline-offset:-2px}[type=search]::-webkit-search-decoration{-webkit-appearance:none}::-webkit-file-upload-button{-webkit-appearance:button;font:inherit}::-moz-focus-inner{padding:0;border-style:none}:-moz-focusring{outline:0}:-moz-ui-invalid{box-shadow:none}::-ms-expand{display:none}[type=file],[type=range]{padding:0;border-width:0}input:not([type=checkbox],[type=radio],[type=range]){height:calc(1rem * var(--pico-line-height) + var(--pico-form-element-spacing-vertical) * 2 + var(--pico-border-width) * 2)}fieldset{width:100%;margin:0;margin-bottom:var(--pico-spacing);padding:0;border:0}fieldset legend,label{display:block;margin-bottom:calc(var(--pico-spacing) * .375);color:var(--pico-color);font-weight:var(--pico-form-label-font-weight,var(--pico-font-weight))}fieldset legend{margin-bottom:calc(var(--pico-spacing) * .5)}button[type=submit],input:not([type=checkbox],[type=radio]),select,textarea{width:100%}input:not([type=checkbox],[type=radio],[type=range],[type=file]),select,textarea{-webkit-appearance:none;-moz-appearance:none;appearance:none;padding:var(--pico-form-element-spacing-vertical) var(--pico-form-element-spacing-horizontal)}input,select,textarea{--pico-background-color:var(--pico-form-element-background-color);--pico-border-color:var(--pico-form-element-border-color);--pico-color:var(--pico-form-element-color);--pico-box-shadow:none;border:var(--pico-border-width) solid var(--pico-border-color);border-radius:var(--pico-border-radius);outline:0;background-color:var(--pico-background-color);box-shadow:var(--pico-box-shadow);color:var(--pico-color);font-weight:var(--pico-font-weight);transition:background-color var(--pico-transition),border-color var(--pico-transition),color var(--pico-transition),box-shadow var(--pico-transition)}:where(select,textarea):not([readonly]):is(:active,:focus),input:not([type=submit],[type=button],[type=reset],[type=checkbox],[type=radio],[readonly]):is(:active,:focus){--pico-background-color:var(--pico-form-element-active-background-color)}:where(select,textarea):not([readonly]):is(:active,:focus),input:not([type=submit],[type=button],[type=reset],[role=switch],[readonly]):is(:active,:focus){--pico-border-color:var(--pico-form-element-active-border-color)}:where(select,textarea):not([readonly]):focus,input:not([type=submit],[type=button],[type=reset],[type=range],[type=file],[readonly]):focus{--pico-box-shadow:0 0 0 var(--pico-outline-width) var(--pico-form-element-focus-color)}:where(fieldset[disabled]) :is(input:not([type=submit],[type=button],[type=reset]),select,textarea),input:not([type=submit],[type=button],[type=reset])[disabled],label[aria-disabled=true],select[disabled],textarea[disabled]{opacity:var(--pico-form-element-disabled-opacity);pointer-events:none}label[aria-disabled=true] input[disabled]{opacity:1}:where(input,select,textarea):not([type=checkbox],[type=radio],[type=date],[type=datetime-local],[type=month],[type=time],[type=week],[type=range])[aria-invalid]{padding-right:calc(var(--pico-form-element-spacing-horizontal) + 1.5rem)!important;padding-left:var(--pico-form-element-spacing-horizontal);padding-inline-start:var(--pico-form-element-spacing-horizontal)!important;padding-inline-end:calc(var(--pico-form-element-spacing-horizontal) + 1.5rem)!important;background-position:center right .75rem;background-size:1rem auto;background-repeat:no-repeat}:where(input,select,textarea):not([type=checkbox],[type=radio],[type=date],[type=datetime-local],[type=month],[type=time],[type=week],[type=range])[aria-invalid=false]:not(select){background-image:var(--pico-icon-valid)}:where(input,select,textarea):not([type=checkbox],[type=radio],[type=date],[type=datetime-local],[type=month],[type=time],[type=week],[type=range])[aria-invalid=true]:not(select){background-image:var(--pico-icon-invalid)}:where(input,select,textarea)[aria-invalid=false]{--pico-border-color:var(--pico-form-element-valid-border-color)}:where(input,select,textarea)[aria-invalid=false]:is(:active,:focus){--pico-border-color:var(--pico-form-element-valid-active-border-color)!important}:where(input,select,textarea)[aria-invalid=false]:is(:active,:focus):not([type=checkbox],[type=radio]){--pico-box-shadow:0 0 0 var(--pico-outline-width) var(--pico-form-element-valid-focus-color)!important}:where(input,select,textarea)[aria-invalid=true]{--pico-border-color:var(--pico-form-element-invalid-border-color)}:where(input,select,textarea)[aria-invalid=true]:is(:active,:focus){--pico-border-color:var(--pico-form-element-invalid-active-border-color)!important}:where(input,select,textarea)[aria-invalid=true]:is(:active,:focus):not([type=checkbox],[type=radio]){--pico-box-shadow:0 0 0 var(--pico-outline-width) var(--pico-form-element-invalid-focus-color)!important}[dir=rtl] :where(input,select,textarea):not([type=checkbox],[type=radio]):is([aria-invalid],[aria-invalid=true],[aria-invalid=false]){background-position:center left .75rem}input::-webkit-input-placeholder,input::placeholder,select:invalid,textarea::-webkit-input-placeholder,textarea::placeholder{color:var(--pico-form-element-placeholder-color);opacity:1}input:not([type=checkbox],[type=radio]),select,textarea{margin-bottom:var(--pico-spacing)}select::-ms-expand{border:0;background-color:transparent}select:not([multiple],[size]){padding-right:calc(var(--pico-form-element-spacing-horizontal) + 1.5rem);padding-left:var(--pico-form-element-spacing-horizontal);padding-inline-start:var(--pico-form-element-spacing-horizontal);padding-inline-end:calc(var(--pico-form-element-spacing-horizontal) + 1.5rem);background-image:var(--pico-icon-chevron);background-position:center right .75rem;background-size:1rem auto;background-repeat:no-repeat}select[multiple] option:checked{background:var(--pico-form-element-selected-background-color);color:var(--pico-form-element-color)}[dir=rtl] select:not([multiple],[size]){background-position:center left .75rem}textarea{display:block;resize:vertical}textarea[aria-invalid]{--pico-icon-height:calc(1rem * var(--pico-line-height) + var(--pico-form-element-spacing-vertical) * 2 + var(--pico-border-width) * 2);background-position:top right .75rem!important;background-size:1rem var(--pico-icon-height)!important}:where(input,select,textarea,fieldset,.grid)+small{display:block;width:100%;margin-top:calc(var(--pico-spacing) * -.75);margin-bottom:var(--pico-spacing);color:var(--pico-muted-color)}:where(input,select,textarea,fieldset,.grid)[aria-invalid=false]+small{color:var(--pico-ins-color)}:where(input,select,textarea,fieldset,.grid)[aria-invalid=true]+small{color:var(--pico-del-color)}label>:where(input,select,textarea){margin-top:calc(var(--pico-spacing) * .25)}label:has([type=checkbox],[type=radio]){width:-moz-fit-content;width:fit-content;cursor:pointer}[type=checkbox],[type=radio]{-webkit-appearance:none;-moz-appearance:none;appearance:none;width:1.25em;height:1.25em;margin-top:-.125em;margin-inline-end:.5em;border-width:var(--pico-border-width);vertical-align:middle;cursor:pointer}[type=checkbox]::-ms-check,[type=radio]::-ms-check{display:none}[type=checkbox]:checked,[type=checkbox]:checked:active,[type=checkbox]:checked:focus,[type=radio]:checked,[type=radio]:checked:active,[type=radio]:checked:focus{--pico-background-color:var(--pico-primary-background);--pico-border-color:var(--pico-primary-border);background-image:var(--pico-icon-checkbox);background-position:center;background-size:.75em auto;background-repeat:no-repeat}[type=checkbox]~label,[type=radio]~label{display:inline-block;margin-bottom:0;cursor:pointer}[type=checkbox]~label:not(:last-of-type),[type=radio]~label:not(:last-of-type){margin-inline-end:1em}[type=checkbox]:indeterminate{--pico-background-color:var(--pico-primary-background);--pico-border-color:var(--pico-primary-border);background-image:var(--pico-icon-minus);background-position:center;background-size:.75em auto;background-repeat:no-repeat}[type=radio]{border-radius:50%}[type=radio]:checked,[type=radio]:checked:active,[type=radio]:checked:focus{--pico-background-color:var(--pico-primary-inverse);border-width:.35em;background-image:none}[type=checkbox][role=switch]{--pico-background-color:var(--pico-switch-background-color);--pico-color:var(--pico-switch-color);width:2.25em;height:1.25em;border:var(--pico-border-width) solid var(--pico-border-color);border-radius:1.25em;background-color:var(--pico-background-color);line-height:1.25em}[type=checkbox][role=switch]:not([aria-invalid]){--pico-border-color:var(--pico-switch-background-color)}[type=checkbox][role=switch]:before{display:block;aspect-ratio:1;height:100%;border-radius:50%;background-color:var(--pico-color);box-shadow:var(--pico-switch-thumb-box-shadow);content:"";transition:margin .1s ease-in-out}[type=checkbox][role=switch]:focus{--pico-background-color:var(--pico-switch-background-color);--pico-border-color:var(--pico-switch-background-color)}[type=checkbox][role=switch]:checked{--pico-background-color:var(--pico-switch-checked-background-color);--pico-border-color:var(--pico-switch-checked-background-color);background-image:none}[type=checkbox][role=switch]:checked::before{margin-inline-start:calc(2.25em - 1.25em)}[type=checkbox][role=switch][disabled]{--pico-background-color:var(--pico-border-color)}[type=checkbox][aria-invalid=false]:checked,[type=checkbox][aria-invalid=false]:checked:active,[type=checkbox][aria-invalid=false]:checked:focus,[type=checkbox][role=switch][aria-invalid=false]:checked,[type=checkbox][role=switch][aria-invalid=false]:checked:active,[type=checkbox][role=switch][aria-invalid=false]:checked:focus{--pico-background-color:var(--pico-form-element-valid-border-color)}[type=checkbox]:checked:active[aria-invalid=true],[type=checkbox]:checked:focus[aria-invalid=true],[type=checkbox]:checked[aria-invalid=true],[type=checkbox][role=switch]:checked:active[aria-invalid=true],[type=checkbox][role=switch]:checked:focus[aria-invalid=true],[type=checkbox][role=switch]:checked[aria-invalid=true]{--pico-background-color:var(--pico-form-element-invalid-border-color)}[type=checkbox][aria-invalid=false]:checked,[type=checkbox][aria-invalid=false]:checked:active,[type=checkbox][aria-invalid=false]:checked:focus,[type=checkbox][role=switch][aria-invalid=false]:checked,[type=checkbox][role=switch][aria-invalid=false]:checked:active,[type=checkbox][role=switch][aria-invalid=false]:checked:focus,[type=radio][aria-invalid=false]:checked,[type=radio][aria-invalid=false]:checked:active,[type=radio][aria-invalid=false]:checked:focus{--pico-border-color:var(--pico-form-element-valid-border-color)}[type=checkbox]:checked:active[aria-invalid=true],[type=checkbox]:checked:focus[aria-invalid=true],[type=checkbox]:checked[aria-invalid=true],[type=checkbox][role=switch]:checked:active[aria-invalid=true],[type=checkbox][role=switch]:checked:focus[aria-invalid=true],[type=checkbox][role=switch]:checked[aria-invalid=true],[type=radio]:checked:active[aria-invalid=true],[type=radio]:checked:focus[aria-invalid=true],[type=radio]:checked[aria-invalid=true]{--pico-border-color:var(--pico-form-element-invalid-border-color)}[type=color]::-webkit-color-swatch-wrapper{padding:0}[type=color]::-moz-focus-inner{padding:0}[type=color]::-webkit-color-swatch{border:0;border-radius:calc(var(--pico-border-radius) * .5)}[type=color]::-moz-color-swatch{border:0;border-radius:calc(var(--pico-border-radius) * .5)}input:not([type=checkbox],[type=radio],[type=range],[type=file]):is([type=date],[type=datetime-local],[type=month],[type=time],[type=week]){--pico-icon-position:0.75rem;--pico-icon-width:1rem;padding-right:calc(var(--pico-icon-width) + var(--pico-icon-position));background-image:var(--pico-icon-date);background-position:center right var(--pico-icon-position);background-size:var(--pico-icon-width) auto;background-repeat:no-repeat}input:not([type=checkbox],[type=radio],[type=range],[type=file])[type=time]{background-image:var(--pico-icon-time)}[type=date]::-webkit-calendar-picker-indicator,[type=datetime-local]::-webkit-calendar-picker-indicator,[type=month]::-webkit-calendar-picker-indicator,[type=time]::-webkit-calendar-picker-indicator,[type=week]::-webkit-calendar-picker-indicator{width:var(--pico-icon-width);margin-right:calc(var(--pico-icon-width) * -1);margin-left:var(--pico-icon-position);opacity:0}@-moz-document url-prefix(){[type=date],[type=datetime-local],[type=month],[type=time],[type=week]{padding-right:var(--pico-form-element-spacing-horizontal)!important;background-image:none!important}}[dir=rtl] :is([type=date],[type=datetime-local],[type=month],[type=time],[type=week]){text-align:right}[type=file]{--pico-color:var(--pico-muted-color);margin-left:calc(var(--pico-outline-width) * -1);padding:calc(var(--pico-form-element-spacing-vertical) * .5) 0;padding-left:var(--pico-outline-width);border:0;border-radius:0;background:0 0}[type=file]::file-selector-button{margin-right:calc(var(--pico-spacing)/ 2);padding:calc(var(--pico-form-element-spacing-vertical) * .5) var(--pico-form-element-spacing-horizontal)}[type=file]:is(:hover,:active,:focus)::file-selector-button{--pico-background-color:var(--pico-secondary-hover-background);--pico-border-color:var(--pico-secondary-hover-border)}[type=file]:focus::file-selector-button{--pico-box-shadow:var(--pico-button-hover-box-shadow, 0 0 0 rgba(0, 0, 0, 0)),0 0 0 var(--pico-outline-width) var(--pico-secondary-focus)}[type=range]{-webkit-appearance:none;-moz-appearance:none;appearance:none;width:100%;height:1.25rem;background:0 0}[type=range]::-webkit-slider-runnable-track{width:100%;height:.375rem;border-radius:var(--pico-border-radius);background-color:var(--pico-range-border-color);-webkit-transition:background-color var(--pico-transition),box-shadow var(--pico-transition);transition:background-color var(--pico-transition),box-shadow var(--pico-transition)}[type=range]::-moz-range-track{width:100%;height:.375rem;border-radius:var(--pico-border-radius);background-color:var(--pico-range-border-color);-moz-transition:background-color var(--pico-transition),box-shadow var(--pico-transition);transition:background-color var(--pico-transition),box-shadow var(--pico-transition)}[type=range]::-ms-track{width:100%;height:.375rem;border-radius:var(--pico-border-radius);background-color:var(--pico-range-border-color);-ms-transition:background-color var(--pico-transition),box-shadow var(--pico-transition);transition:background-color var(--pico-transition),box-shadow var(--pico-transition)}[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:1.25rem;height:1.25rem;margin-top:-.4375rem;border:2px solid var(--pico-range-thumb-border-color);border-radius:50%;background-color:var(--pico-range-thumb-color);cursor:pointer;-webkit-transition:background-color var(--pico-transition),transform var(--pico-transition);transition:background-color var(--pico-transition),transform var(--pico-transition)}[type=range]::-moz-range-thumb{-webkit-appearance:none;width:1.25rem;height:1.25rem;margin-top:-.4375rem;border:2px solid var(--pico-range-thumb-border-color);border-radius:50%;background-color:var(--pico-range-thumb-color);cursor:pointer;-moz-transition:background-color var(--pico-transition),transform var(--pico-transition);transition:background-color var(--pico-transition),transform var(--pico-transition)}[type=range]::-ms-thumb{-webkit-appearance:none;width:1.25rem;height:1.25rem;margin-top:-.4375rem;border:2px solid var(--pico-range-thumb-border-color);border-radius:50%;background-color:var(--pico-range-thumb-color);cursor:pointer;-ms-transition:background-color var(--pico-transition),transform var(--pico-transition);transition:background-color var(--pico-transition),transform var(--pico-transition)}[type=range]:active,[type=range]:focus-within{--pico-range-border-color:var(--pico-range-active-border-color);--pico-range-thumb-color:var(--pico-range-thumb-active-color)}[type=range]:active::-webkit-slider-thumb{transform:scale(1.25)}[type=range]:active::-moz-range-thumb{transform:scale(1.25)}[type=range]:active::-ms-thumb{transform:scale(1.25)}input:not([type=checkbox],[type=radio],[type=range],[type=file])[type=search]{padding-inline-start:calc(var(--pico-form-element-spacing-horizontal) + 1.75rem);background-image:var(--pico-icon-search);background-position:center left calc(var(--pico-form-element-spacing-horizontal) + .125rem);background-size:1rem auto;background-repeat:no-repeat}input:not([type=checkbox],[type=radio],[type=range],[type=file])[type=search][aria-invalid]{padding-inline-start:calc(var(--pico-form-element-spacing-horizontal) + 1.75rem)!important;background-position:center left 1.125rem,center right .75rem}input:not([type=checkbox],[type=radio],[type=range],[type=file])[type=search][aria-invalid=false]{background-image:var(--pico-icon-search),var(--pico-icon-valid)}input:not([type=checkbox],[type=radio],[type=range],[type=file])[type=search][aria-invalid=true]{background-image:var(--pico-icon-search),var(--pico-icon-invalid)}[dir=rtl] :where(input):not([type=checkbox],[type=radio],[type=range],[type=file])[type=search]{background-position:center right 1.125rem}[dir=rtl] :where(input):not([type=checkbox],[type=radio],[type=range],[type=file])[type=search][aria-invalid]{background-position:center right 1.125rem,center left .75rem}details{display:block;margin-bottom:var(--pico-spacing)}details summary{line-height:1rem;list-style-type:none;cursor:pointer;transition:color var(--pico-transition)}details summary:not([role]){color:var(--pico-accordion-close-summary-color)}details summary::-webkit-details-marker{display:none}details summary::marker{display:none}details summary::-moz-list-bullet{list-style-type:none}details summary::after{display:block;width:1rem;height:1rem;margin-inline-start:calc(var(--pico-spacing,1rem) * .5);float:right;transform:rotate(-90deg);background-image:var(--pico-icon-chevron);background-position:right center;background-size:1rem auto;background-repeat:no-repeat;content:"";transition:transform var(--pico-transition)}details summary:focus{outline:0}details summary:focus:not([role]){color:var(--pico-accordion-active-summary-color)}details summary:focus-visible:not([role]){outline:var(--pico-outline-width) solid var(--pico-primary-focus);outline-offset:calc(var(--pico-spacing,1rem) * 0.5);color:var(--pico-primary)}details summary[role=button]{width:100%;text-align:left}details summary[role=button]::after{height:calc(1rem * var(--pico-line-height,1.5))}details[open]>summary{margin-bottom:var(--pico-spacing)}details[open]>summary:not([role]):not(:focus){color:var(--pico-accordion-open-summary-color)}details[open]>summary::after{transform:rotate(0)}[dir=rtl] details summary{text-align:right}[dir=rtl] details summary::after{float:left;background-position:left center}article{margin-bottom:var(--pico-block-spacing-vertical);padding:var(--pico-block-spacing-vertical) var(--pico-block-spacing-horizontal);border-radius:var(--pico-border-radius);background:var(--pico-card-background-color);box-shadow:var(--pico-card-box-shadow)}article>footer,article>header{margin-right:calc(var(--pico-block-spacing-horizontal) * -1);margin-left:calc(var(--pico-block-spacing-horizontal) * -1);padding:calc(var(--pico-block-spacing-vertical) * .66) var(--pico-block-spacing-horizontal);background-color:var(--pico-card-sectioning-background-color)}article>header{margin-top:calc(var(--pico-block-spacing-vertical) * -1);margin-bottom:var(--pico-block-spacing-vertical);border-bottom:var(--pico-border-width) solid var(--pico-card-border-color);border-top-right-radius:var(--pico-border-radius);border-top-left-radius:var(--pico-border-radius)}article>footer{margin-top:var(--pico-block-spacing-vertical);margin-bottom:calc(var(--pico-block-spacing-vertical) * -1);border-top:var(--pico-border-width) solid var(--pico-card-border-color);border-bottom-right-radius:var(--pico-border-radius);border-bottom-left-radius:var(--pico-border-radius)}details.dropdown{position:relative;border-bottom:none}details.dropdown>a::after,details.dropdown>button::after,details.dropdown>summary::after{display:block;width:1rem;height:calc(1rem * var(--pico-line-height,1.5));margin-inline-start:.25rem;float:right;transform:rotate(0) translateX(.2rem);background-image:var(--pico-icon-chevron);background-position:right center;background-size:1rem auto;background-repeat:no-repeat;content:""}nav details.dropdown{margin-bottom:0}details.dropdown>summary:not([role]){height:calc(1rem * var(--pico-line-height) + var(--pico-form-element-spacing-vertical) * 2 + var(--pico-border-width) * 2);padding:var(--pico-form-element-spacing-vertical) var(--pico-form-element-spacing-horizontal);border:var(--pico-border-width) solid var(--pico-form-element-border-color);border-radius:var(--pico-border-radius);background-color:var(--pico-form-element-background-color);color:var(--pico-form-element-placeholder-color);line-height:inherit;cursor:pointer;-webkit-user-select:none;-moz-user-select:none;user-select:none;transition:background-color var(--pico-transition),border-color var(--pico-transition),color var(--pico-transition),box-shadow var(--pico-transition)}details.dropdown>summary:not([role]):active,details.dropdown>summary:not([role]):focus{border-color:var(--pico-form-element-active-border-color);background-color:var(--pico-form-element-active-background-color)}details.dropdown>summary:not([role]):focus{box-shadow:0 0 0 var(--pico-outline-width) var(--pico-form-element-focus-color)}details.dropdown>summary:not([role]):focus-visible{outline:0}details.dropdown>summary:not([role])[aria-invalid=false]{--pico-form-element-border-color:var(--pico-form-element-valid-border-color);--pico-form-element-active-border-color:var(--pico-form-element-valid-focus-color);--pico-form-element-focus-color:var(--pico-form-element-valid-focus-color)}details.dropdown>summary:not([role])[aria-invalid=true]{--pico-form-element-border-color:var(--pico-form-element-invalid-border-color);--pico-form-element-active-border-color:var(--pico-form-element-invalid-focus-color);--pico-form-element-focus-color:var(--pico-form-element-invalid-focus-color)}nav details.dropdown{display:inline;margin:calc(var(--pico-nav-element-spacing-vertical) * -1) 0}nav details.dropdown>summary::after{transform:rotate(0) translateX(0)}nav details.dropdown>summary:not([role]){height:calc(1rem * var(--pico-line-height) + var(--pico-nav-link-spacing-vertical) * 2);padding:calc(var(--pico-nav-link-spacing-vertical) - var(--pico-border-width) * 2) var(--pico-nav-link-spacing-horizontal)}nav details.dropdown>summary:not([role]):focus-visible{box-shadow:0 0 0 var(--pico-outline-width) var(--pico-primary-focus)}details.dropdown>summary+ul{display:flex;z-index:99;position:absolute;left:0;flex-direction:column;width:100%;min-width:-moz-fit-content;min-width:fit-content;margin:0;margin-top:var(--pico-outline-width);padding:0;border:var(--pico-border-width) solid var(--pico-dropdown-border-color);border-radius:var(--pico-border-radius);background-color:var(--pico-dropdown-background-color);box-shadow:var(--pico-dropdown-box-shadow);color:var(--pico-dropdown-color);white-space:nowrap;opacity:0;transition:opacity var(--pico-transition),transform 0s ease-in-out 1s}details.dropdown>summary+ul[dir=rtl]{right:0;left:auto}details.dropdown>summary+ul li{width:100%;margin-bottom:0;padding:calc(var(--pico-form-element-spacing-vertical) * .5) var(--pico-form-element-spacing-horizontal);list-style:none}details.dropdown>summary+ul li:first-of-type{margin-top:calc(var(--pico-form-element-spacing-vertical) * .5)}details.dropdown>summary+ul li:last-of-type{margin-bottom:calc(var(--pico-form-element-spacing-vertical) * .5)}details.dropdown>summary+ul li a{display:block;margin:calc(var(--pico-form-element-spacing-vertical) * -.5) calc(var(--pico-form-element-spacing-horizontal) * -1);padding:calc(var(--pico-form-element-spacing-vertical) * .5) var(--pico-form-element-spacing-horizontal);overflow:hidden;border-radius:0;color:var(--pico-dropdown-color);text-decoration:none;text-overflow:ellipsis}details.dropdown>summary+ul li a:active,details.dropdown>summary+ul li a:focus,details.dropdown>summary+ul li a:focus-visible,details.dropdown>summary+ul li a:hover,details.dropdown>summary+ul li a[aria-current]:not([aria-current=false]){background-color:var(--pico-dropdown-hover-background-color)}details.dropdown>summary+ul li label{width:100%}details.dropdown>summary+ul li:has(label):hover{background-color:var(--pico-dropdown-hover-background-color)}details.dropdown[open]>summary{margin-bottom:0}details.dropdown[open]>summary+ul{transform:scaleY(1);opacity:1;transition:opacity var(--pico-transition),transform 0s ease-in-out 0s}details.dropdown[open]>summary::before{display:block;z-index:1;position:fixed;width:100vw;height:100vh;inset:0;background:0 0;content:"";cursor:default}label>details.dropdown{margin-top:calc(var(--pico-spacing) * .25)}[role=group],[role=search]{display:inline-flex;position:relative;width:100%;margin-bottom:var(--pico-spacing);border-radius:var(--pico-border-radius);box-shadow:var(--pico-group-box-shadow,0 0 0 transparent);vertical-align:middle;transition:box-shadow var(--pico-transition)}[role=group] input:not([type=checkbox],[type=radio]),[role=group] select,[role=group]>*,[role=search] input:not([type=checkbox],[type=radio]),[role=search] select,[role=search]>*{position:relative;flex:1 1 auto;margin-bottom:0}[role=group] input:not([type=checkbox],[type=radio]):not(:first-child),[role=group] select:not(:first-child),[role=group]>:not(:first-child),[role=search] input:not([type=checkbox],[type=radio]):not(:first-child),[role=search] select:not(:first-child),[role=search]>:not(:first-child){margin-left:0;border-top-left-radius:0;border-bottom-left-radius:0}[role=group] input:not([type=checkbox],[type=radio]):not(:last-child),[role=group] select:not(:last-child),[role=group]>:not(:last-child),[role=search] input:not([type=checkbox],[type=radio]):not(:last-child),[role=search] select:not(:last-child),[role=search]>:not(:last-child){border-top-right-radius:0;border-bottom-right-radius:0}[role=group] input:not([type=checkbox],[type=radio]):focus,[role=group] select:focus,[role=group]>:focus,[role=search] input:not([type=checkbox],[type=radio]):focus,[role=search] select:focus,[role=search]>:focus{z-index:2}[role=group] [role=button]:not(:first-child),[role=group] [type=button]:not(:first-child),[role=group] [type=reset]:not(:first-child),[role=group] [type=submit]:not(:first-child),[role=group] button:not(:first-child),[role=group] input:not([type=checkbox],[type=radio]):not(:first-child),[role=group] select:not(:first-child),[role=search] [role=button]:not(:first-child),[role=search] [type=button]:not(:first-child),[role=search] [type=reset]:not(:first-child),[role=search] [type=submit]:not(:first-child),[role=search] button:not(:first-child),[role=search] input:not([type=checkbox],[type=radio]):not(:first-child),[role=search] select:not(:first-child){margin-left:calc(var(--pico-border-width) * -1)}[role=group] [role=button],[role=group] [type=button],[role=group] [type=reset],[role=group] [type=submit],[role=group] button,[role=search] [role=button],[role=search] [type=button],[role=search] [type=reset],[role=search] [type=submit],[role=search] button{width:auto}@supports selector(:has(*)){[role=group]:has(button:focus,[type=submit]:focus,[type=button]:focus,[role=button]:focus),[role=search]:has(button:focus,[type=submit]:focus,[type=button]:focus,[role=button]:focus){--pico-group-box-shadow:var(--pico-group-box-shadow-focus-with-button)}[role=group]:has(button:focus,[type=submit]:focus,[type=button]:focus,[role=button]:focus) input:not([type=checkbox],[type=radio]),[role=group]:has(button:focus,[type=submit]:focus,[type=button]:focus,[role=button]:focus) select,[role=search]:has(button:focus,[type=submit]:focus,[type=button]:focus,[role=button]:focus) input:not([type=checkbox],[type=radio]),[role=search]:has(button:focus,[type=submit]:focus,[type=button]:focus,[role=button]:focus) select{border-color:transparent}[role=group]:has(input:not([type=submit],[type=button]):focus,select:focus),[role=search]:has(input:not([type=submit],[type=button]):focus,select:focus){--pico-group-box-shadow:var(--pico-group-box-shadow-focus-with-input)}[role=group]:has(input:not([type=submit],[type=button]):focus,select:focus) [role=button],[role=group]:has(input:not([type=submit],[type=button]):focus,select:focus) [type=button],[role=group]:has(input:not([type=submit],[type=button]):focus,select:focus) [type=submit],[role=group]:has(input:not([type=submit],[type=button]):focus,select:focus) button,[role=search]:has(input:not([type=submit],[type=button]):focus,select:focus) [role=button],[role=search]:has(input:not([type=submit],[type=button]):focus,select:focus) [type=button],[role=search]:has(input:not([type=submit],[type=button]):focus,select:focus) [type=submit],[role=search]:has(input:not([type=submit],[type=button]):focus,select:focus) button{--pico-button-box-shadow:0 0 0 var(--pico-border-width) var(--pico-primary-border);--pico-button-hover-box-shadow:0 0 0 var(--pico-border-width) var(--pico-primary-hover-border)}[role=group] [role=button]:focus,[role=group] [type=button]:focus,[role=group] [type=reset]:focus,[role=group] [type=submit]:focus,[role=group] button:focus,[role=search] [role=button]:focus,[role=search] [type=button]:focus,[role=search] [type=reset]:focus,[role=search] [type=submit]:focus,[role=search] button:focus{box-shadow:none}}[role=search]>:first-child{border-top-left-radius:5rem;border-bottom-left-radius:5rem}[role=search]>:last-child{border-top-right-radius:5rem;border-bottom-right-radius:5rem}[aria-busy=true]:not(input,select,textarea,html,form){white-space:nowrap}[aria-busy=true]:not(input,select,textarea,html,form)::before{display:inline-block;width:1em;height:1em;background-image:var(--pico-icon-loading);background-size:1em auto;background-repeat:no-repeat;content:"";vertical-align:-.125em}[aria-busy=true]:not(input,select,textarea,html,form):not(:empty)::before{margin-inline-end:calc(var(--pico-spacing) * .5)}[aria-busy=true]:not(input,select,textarea,html,form):empty{text-align:center}[role=button][aria-busy=true],[type=button][aria-busy=true],[type=reset][aria-busy=true],[type=submit][aria-busy=true],a[aria-busy=true],button[aria-busy=true]{pointer-events:none}:host,:root{--pico-scrollbar-width:0px}dialog{display:flex;z-index:999;position:fixed;top:0;right:0;bottom:0;left:0;align-items:center;justify-content:center;width:inherit;min-width:100%;height:inherit;min-height:100%;padding:0;border:0;-webkit-backdrop-filter:var(--pico-modal-overlay-backdrop-filter);backdrop-filter:var(--pico-modal-overlay-backdrop-filter);background-color:var(--pico-modal-overlay-background-color);color:var(--pico-color)}dialog>article{width:100%;max-height:calc(100vh - var(--pico-spacing) * 2);margin:var(--pico-spacing);overflow:auto}@media (min-width:576px){dialog>article{max-width:510px}}@media (min-width:768px){dialog>article{max-width:700px}}dialog>article>header>*{margin-bottom:0}dialog>article>header .close,dialog>article>header :is(a,button)[rel=prev]{margin:0;margin-left:var(--pico-spacing);padding:0;float:right}dialog>article>footer{text-align:right}dialog>article>footer [role=button],dialog>article>footer button{margin-bottom:0}dialog>article>footer [role=button]:not(:first-of-type),dialog>article>footer button:not(:first-of-type){margin-left:calc(var(--pico-spacing) * .5)}dialog>article .close,dialog>article :is(a,button)[rel=prev]{display:block;width:1rem;height:1rem;margin-top:calc(var(--pico-spacing) * -1);margin-bottom:var(--pico-spacing);margin-left:auto;border:none;background-image:var(--pico-icon-close);background-position:center;background-size:auto 1rem;background-repeat:no-repeat;background-color:transparent;opacity:.5;transition:opacity var(--pico-transition)}dialog>article .close:is([aria-current]:not([aria-current=false]),:hover,:active,:focus),dialog>article :is(a,button)[rel=prev]:is([aria-current]:not([aria-current=false]),:hover,:active,:focus){opacity:1}dialog:not([open]),dialog[open=false]{display:none}.modal-is-open{padding-right:var(--pico-scrollbar-width,0);overflow:hidden;pointer-events:none;touch-action:none}.modal-is-open dialog{pointer-events:auto;touch-action:auto}:where(.modal-is-opening,.modal-is-closing) dialog,:where(.modal-is-opening,.modal-is-closing) dialog>article{animation-duration:.2s;animation-timing-function:ease-in-out;animation-fill-mode:both}:where(.modal-is-opening,.modal-is-closing) dialog{animation-duration:.8s;animation-name:modal-overlay}:where(.modal-is-opening,.modal-is-closing) dialog>article{animation-delay:.2s;animation-name:modal}.modal-is-closing dialog,.modal-is-closing dialog>article{animation-delay:0s;animation-direction:reverse}@keyframes modal-overlay{from{-webkit-backdrop-filter:none;backdrop-filter:none;background-color:transparent}}@keyframes modal{from{transform:translateY(-100%);opacity:0}}:where(nav li)::before{float:left;content:"鈥?}nav,nav ul{display:flex}nav{justify-content:space-between;overflow:visible}nav ol,nav ul{align-items:center;margin-bottom:0;padding:0;list-style:none}nav ol:first-of-type,nav ul:first-of-type{margin-left:calc(var(--pico-nav-element-spacing-horizontal) * -1)}nav ol:last-of-type,nav ul:last-of-type{margin-right:calc(var(--pico-nav-element-spacing-horizontal) * -1)}nav li{display:inline-block;margin:0;padding:var(--pico-nav-element-spacing-vertical) var(--pico-nav-element-spacing-horizontal)}nav li :where(a,[role=link]){display:inline-block;margin:calc(var(--pico-nav-link-spacing-vertical) * -1) calc(var(--pico-nav-link-spacing-horizontal) * -1);padding:var(--pico-nav-link-spacing-vertical) var(--pico-nav-link-spacing-horizontal);border-radius:var(--pico-border-radius)}nav li :where(a,[role=link]):not(:hover){text-decoration:none}nav li [role=button],nav li [type=button],nav li button,nav li input:not([type=checkbox],[type=radio],[type=range],[type=file]),nav li select{height:auto;margin-right:inherit;margin-bottom:0;margin-left:inherit;padding:calc(var(--pico-nav-link-spacing-vertical) - var(--pico-border-width) * 2) var(--pico-nav-link-spacing-horizontal)}nav[aria-label=breadcrumb]{align-items:center;justify-content:start}nav[aria-label=breadcrumb] ul li:not(:first-child){margin-inline-start:var(--pico-nav-link-spacing-horizontal)}nav[aria-label=breadcrumb] ul li a{margin:calc(var(--pico-nav-link-spacing-vertical) * -1) 0;margin-inline-start:calc(var(--pico-nav-link-spacing-horizontal) * -1)}nav[aria-label=breadcrumb] ul li:not(:last-child)::after{display:inline-block;position:absolute;width:calc(var(--pico-nav-link-spacing-horizontal) * 4);margin:0 calc(var(--pico-nav-link-spacing-horizontal) * -1);content:var(--pico-nav-breadcrumb-divider);color:var(--pico-muted-color);text-align:center;text-decoration:none;white-space:nowrap}nav[aria-label=breadcrumb] a[aria-current]:not([aria-current=false]){background-color:transparent;color:inherit;text-decoration:none;pointer-events:none}aside li,aside nav,aside ol,aside ul{display:block}aside li{padding:calc(var(--pico-nav-element-spacing-vertical) * .5) var(--pico-nav-element-spacing-horizontal)}aside li a{display:block}aside li [role=button]{margin:inherit}[dir=rtl] nav[aria-label=breadcrumb] ul li:not(:last-child) ::after{content:"\\"}progress{display:inline-block;vertical-align:baseline}progress{-webkit-appearance:none;-moz-appearance:none;display:inline-block;appearance:none;width:100%;height:.5rem;margin-bottom:calc(var(--pico-spacing) * .5);overflow:hidden;border:0;border-radius:var(--pico-border-radius);background-color:var(--pico-progress-background-color);color:var(--pico-progress-color)}progress::-webkit-progress-bar{border-radius:var(--pico-border-radius);background:0 0}progress[value]::-webkit-progress-value{background-color:var(--pico-progress-color);-webkit-transition:inline-size var(--pico-transition);transition:inline-size var(--pico-transition)}progress::-moz-progress-bar{background-color:var(--pico-progress-color)}@media (prefers-reduced-motion:no-preference){progress:indeterminate{background:var(--pico-progress-background-color) linear-gradient(to right,var(--pico-progress-color) 30%,var(--pico-progress-background-color) 30%) top left/150% 150% no-repeat;animation:progress-indeterminate 1s linear infinite}progress:indeterminate[value]::-webkit-progress-value{background-color:transparent}progress:indeterminate::-moz-progress-bar{background-color:transparent}}@media (prefers-reduced-motion:no-preference){[dir=rtl] progress:indeterminate{animation-direction:reverse}}@keyframes progress-indeterminate{0%{background-position:200% 0}100%{background-position:-200% 0}}[data-tooltip]{position:relative}[data-tooltip]:not(a,button,input,[role=button]){border-bottom:1px dotted;text-decoration:none;cursor:help}[data-tooltip]::after,[data-tooltip]::before,[data-tooltip][data-placement=top]::after,[data-tooltip][data-placement=top]::before{display:block;z-index:99;position:absolute;bottom:100%;left:50%;padding:.25rem .5rem;overflow:hidden;transform:translate(-50%,-.25rem);border-radius:var(--pico-border-radius);background:var(--pico-tooltip-background-color);content:attr(data-tooltip);color:var(--pico-tooltip-color);font-style:normal;font-weight:var(--pico-font-weight);font-size:.875rem;text-decoration:none;text-overflow:ellipsis;white-space:nowrap;opacity:0;pointer-events:none}[data-tooltip]::after,[data-tooltip][data-placement=top]::after{padding:0;transform:translate(-50%,0);border-top:.3rem solid;border-right:.3rem solid transparent;border-left:.3rem solid transparent;border-radius:0;background-color:transparent;content:"";color:var(--pico-tooltip-background-color)}[data-tooltip][data-placement=bottom]::after,[data-tooltip][data-placement=bottom]::before{top:100%;bottom:auto;transform:translate(-50%,.25rem)}[data-tooltip][data-placement=bottom]:after{transform:translate(-50%,-.3rem);border:.3rem solid transparent;border-bottom:.3rem solid}[data-tooltip][data-placement=left]::after,[data-tooltip][data-placement=left]::before{top:50%;right:100%;bottom:auto;left:auto;transform:translate(-.25rem,-50%)}[data-tooltip][data-placement=left]:after{transform:translate(.3rem,-50%);border:.3rem solid transparent;border-left:.3rem solid}[data-tooltip][data-placement=right]::after,[data-tooltip][data-placement=right]::before{top:50%;right:auto;bottom:auto;left:100%;transform:translate(.25rem,-50%)}[data-tooltip][data-placement=right]:after{transform:translate(-.3rem,-50%);border:.3rem solid transparent;border-right:.3rem solid}[data-tooltip]:focus::after,[data-tooltip]:focus::before,[data-tooltip]:hover::after,[data-tooltip]:hover::before{opacity:1}@media (hover:hover) and (pointer:fine){[data-tooltip]:focus::after,[data-tooltip]:focus::before,[data-tooltip]:hover::after,[data-tooltip]:hover::before{--pico-tooltip-slide-to:translate(-50%, -0.25rem);transform:translate(-50%,.75rem);animation-duration:.2s;animation-fill-mode:forwards;animation-name:tooltip-slide;opacity:0}[data-tooltip]:focus::after,[data-tooltip]:hover::after{--pico-tooltip-caret-slide-to:translate(-50%, 0rem);transform:translate(-50%,-.25rem);animation-name:tooltip-caret-slide}[data-tooltip][data-placement=bottom]:focus::after,[data-tooltip][data-placement=bottom]:focus::before,[data-tooltip][data-placement=bottom]:hover::after,[data-tooltip][data-placement=bottom]:hover::before{--pico-tooltip-slide-to:translate(-50%, 0.25rem);transform:translate(-50%,-.75rem);animation-name:tooltip-slide}[data-tooltip][data-placement=bottom]:focus::after,[data-tooltip][data-placement=bottom]:hover::after{--pico-tooltip-caret-slide-to:translate(-50%, -0.3rem);transform:translate(-50%,-.5rem);animation-name:tooltip-caret-slide}[data-tooltip][data-placement=left]:focus::after,[data-tooltip][data-placement=left]:focus::before,[data-tooltip][data-placement=left]:hover::after,[data-tooltip][data-placement=left]:hover::before{--pico-tooltip-slide-to:translate(-0.25rem, -50%);transform:translate(.75rem,-50%);animation-name:tooltip-slide}[data-tooltip][data-placement=left]:focus::after,[data-tooltip][data-placement=left]:hover::after{--pico-tooltip-caret-slide-to:translate(0.3rem, -50%);transform:translate(.05rem,-50%);animation-name:tooltip-caret-slide}[data-tooltip][data-placement=right]:focus::after,[data-tooltip][data-placement=right]:focus::before,[data-tooltip][data-placement=right]:hover::after,[data-tooltip][data-placement=right]:hover::before{--pico-tooltip-slide-to:translate(0.25rem, -50%);transform:translate(-.75rem,-50%);animation-name:tooltip-slide}[data-tooltip][data-placement=right]:focus::after,[data-tooltip][data-placement=right]:hover::after{--pico-tooltip-caret-slide-to:translate(-0.3rem, -50%);transform:translate(-.05rem,-50%);animation-name:tooltip-caret-slide}}@keyframes tooltip-slide{to{transform:var(--pico-tooltip-slide-to);opacity:1}}@keyframes tooltip-caret-slide{50%{opacity:0}to{transform:var(--pico-tooltip-caret-slide-to);opacity:1}}[aria-controls]{cursor:pointer}[aria-disabled=true],[disabled]{cursor:not-allowed}[aria-hidden=false][hidden]{display:initial}[aria-hidden=false][hidden]:not(:focus){clip:rect(0,0,0,0);position:absolute}[tabindex],a,area,button,input,label,select,summary,textarea{-ms-touch-action:manipulation}[dir=rtl]{direction:rtl}@media (prefers-reduced-motion:reduce){:not([aria-busy=true]),:not([aria-busy=true])::after,:not([aria-busy=true])::before{background-attachment:initial!important;animation-duration:1ms!important;animation-delay:-1ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-delay:0s!important;transition-duration:0s!important}}
+----------
+.\src\main\resources\templates\layout.html:
+<!DOCTYPE html>
+<html lang="zh-CN"
+      xmlns:th="http://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title layout:title-pattern="$CONTENT_TITLE - $LAYOUT_TITLE">鏅烘収瀹胯垗鍒嗛厤绯荤粺</title>
+    <link rel="stylesheet" th:href="@{/css/pico.min.css}">
+    <style>
+        :root {
+            --pico-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+            --pico-block-spacing-vertical: 1.2rem;
+            --pico-card-background-color: var(--pico-background-color);
+            --pico-card-border-color: var(--pico-muted-border-color);
+        }
+        main { min-height: 75vh; }
+        .error { color: var(--pico-form-element-invalid-border-color); font-size: 0.875rem; }
+        .success { color: var(--pico-form-element-valid-border-color); }
+        body > header {
+            border-bottom: 1px solid var(--pico-muted-border-color);
+            padding-bottom: 0.5rem;
+        }
+        /* Style for logout button inside dropdown */
+        details[role="list"] ul li button {
+            background: none;
+            border: none;
+            padding: 0.5rem 1rem;
+            width: 100%;
+            text-align: right;
+            color: var(--pico-color);
+            cursor: pointer;
+        }
+        details[role="list"] ul li button:hover {
+            background-color: var(--pico-dropdown-hover-background-color);
+        }
+    </style>
+</head>
+<body data-theme="light">
+
+<header class="container">
+    <nav>
+        <ul>
+            <li><strong>鏅烘収瀹胯垗鍒嗛厤绯荤粺</strong></li>
+        </ul>
+        <ul>
+            <li sec:authorize="isAuthenticated()">
+                <details role="list" dir="rtl">
+                    <summary aria-haspopup="listbox" role="button" class="secondary outline" sec:authentication="name"></summary>
+                    <ul role="listbox">
+                        <li>
+                            <form th:action="@{/perform_logout}" method="post" style="margin: 0;">
+                                <button type="submit">鐧诲嚭</button>
+                            </form>
+                        </li>
+                    </ul>
+                </details>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+<main class="container" layout:fragment="content">
+    <!-- Page-specific content will be inserted here -->
+</main>
+
+<footer class="container" style="text-align: center; margin-top: 2rem; padding: 2rem 0; border-top: 1px solid var(--pico-muted-border-color);">
+    <small>漏 2024 鏅烘収瀹胯垗鍒嗛厤绯荤粺. All rights reserved.</small>
+</footer>
+
+</body>
+</html>
+----------
+.\src\main\resources\templates\login.html:
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>绯荤粺鐧诲綍 - 鏅烘収瀹胯垗鍒嗛厤绯荤粺</title>
+    <link rel="stylesheet" th:href="@{/css/pico.min.css}">
+    <style>
+        .error { color: var(--pico-form-element-invalid-border-color); font-size: 0.875rem; margin-top: -0.5rem; margin-bottom: 1rem; }
+        .success { color: var(--pico-form-element-valid-border-color); }
+    </style>
+</head>
+<body>
+<main class="container" style="max-width: 480px; margin-top: 10vh;">
+    <article>
+        <h2 style="text-align: center;">鏅烘収瀹胯垗绯荤粺鐧诲綍</h2>
+
+        <form th:action="@{/perform_login}" method="post">
+            <p th:if="${param.error}" class="error">瀛﹀彿鎴栧瘑鐮侀敊璇紝璇烽噸璇曘€?/p>
+            <p th:if="${param.logout}" class="success">鎮ㄥ凡鎴愬姛鐧诲嚭銆?/p>
+
+            <label for="username">瀛﹀彿</label>
+            <input type="text" id="username" name="username" placeholder="瀛﹀彿 / 绠＄悊鍛樿处鍙? required autofocus>
+
+            <label for="password">瀵嗙爜</label>
+            <input type="password" id="password" name="password" placeholder="瀵嗙爜" required>
+
+            <button type="submit" style="width: 100%;">鐧诲綍</button>
+        </form>
+    </article>
+</main>
+</body>
+</html>
+----------
+.\src\main\resources\templates\admin\dashboard.html:
+<!DOCTYPE html>
+<html lang="zh-CN"
+      layout:decorate="~{layout}"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+    <title>绠＄悊鍛樹富闈㈡澘</title>
+</head>
+<body>
+
+<section layout:fragment="content">
+    <hgroup>
+        <h2>绠＄悊鍛樹富闈㈡澘</h2>
+        <h3>娆㈣繋鎮紝<span sec:authentication="name">Admin</span>锛佸湪杩欓噷绠＄悊鏁翠釜瀹胯垗鍒嗛厤娴佺▼銆?/h3>
+
+    </hgroup>
+    <div class="grid">
+        <article>
+            <h4><a href="#cycles" class="contrast">绠＄悊鍖归厤鍛ㄦ湡</a></h4>
+            <p>鍒涘缓銆佹煡鐪嬨€侀厤缃棶鍗峰拰鍚姩鏂扮殑鍒嗛厤鍛ㄦ湡銆?/p>
+            <footer><a href="#cycles" role="button">鍓嶅線绠＄悊</a></footer>
+        </article>
+        <article>
+            <h4><a th:href="@{/view/admin/dorms/buildings}" class="contrast">绠＄悊瀹胯垗璧勬簮</a></h4>
+            <p>澧炲垹鏀规煡妤兼爧銆佹埧闂村拰搴婁綅绛夌墿鐞嗚祫婧愩€?/p>
+            <footer><a th:href="@{/view/admin/dorms/buildings}" role="button" class="secondary">鍓嶅線绠＄悊</a></footer>
+        </article>
+        <article>
+            <h4><a href="#support" class="contrast">鏀寔涓庡唴瀹?/a></h4>
+            <p>澶勭悊璋冨鐢宠銆佸彂甯冨績鐞嗗仴搴锋枃绔犵瓑銆?/p>
+            <footer><a href="#support" role="button" class="contrast">鍓嶅線澶勭悊</a></footer>
+        </article>
+    </div>
+</section>
+
+</body>
+</html>
+----------
+.\src\main\resources\templates\admin\dorm\building-form.html:
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title th:text="${pageTitle}">妤兼爧琛ㄥ崟</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <hgroup>
+        <h2 th:text="${pageTitle}">鏂板缓/缂栬緫妤兼爧</h2>
+        <h3 th:text="${buildingId == null} ? '鍒涘缓涓€涓柊鐨勫鑸嶆ゼ銆? : '淇敼鐜版湁瀹胯垗妤肩殑淇℃伅銆?"></h3>
+    </hgroup>
+
+    <article>
+        <form th:action="${buildingId == null} ? @{/view/admin/dorms/buildings/create} : @{/view/admin/dorms/buildings/{id}/update(id=${buildingId})}"
+              th:object="${buildingDto}"
+              method="post">
+
+            <label for="name">
+                妤兼爧鍚嶇О
+                <input type="text" id="name" th:field="*{name}" placeholder="渚嬪锛氱传鑽?鍙锋ゼ" required
+                       th:aria-invalid="${#fields.hasErrors('name')} ? 'true' : 'false'">
+                <small th:if="${#fields.hasErrors('name')}" th:errors="*{name}" class="error"></small>
+            </label>
+
+            <div class="grid">
+                <a th:href="@{/view/admin/dorms/buildings}" role="button" class="secondary outline">鍙栨秷</a>
+                <button type="submit" th:text="${buildingId == null} ? '鍒涘缓妤兼爧' : '淇濆瓨鏇存敼'">鎻愪氦</button>
+            </div>
+        </form>
+    </article>
+</section>
+</body>
+</html>
+----------
+.\src\main\resources\templates\admin\dorm\buildings-list.html:
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title>妤兼爧璧勬簮绠＄悊</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <hgroup style="margin-bottom: 0;">
+            <h2>妤兼爧璧勬簮绠＄悊</h2>
+            <h3>绠＄悊鏍″洯鍐呯殑鎵€鏈夊鑸嶆ゼ銆?/h3>
+        </hgroup>
+        <a th:href="@{/view/admin/dorms/buildings/new}" role="button" style="margin-bottom: 1rem;">鏂板缓妤兼爧</a>
+    </div>
+
+    <!-- Success/Error Messages -->
+    <div th:if="${successMessage}" class="success" th:text="${successMessage}" style="margin-bottom: 1rem;"></div>
+    <div th:if="${errorMessage}" class="error" th:text="${errorMessage}" style="margin-bottom: 1rem;"></div>
+
+    <figure>
+        <table role="grid">
+            <thead>
+            <tr>
+                <th scope="col">妤兼爧鍚嶇О</th>
+                <th scope="col" style="text-align: right;">鎿嶄綔</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:if="${#lists.isEmpty(buildings)}">
+                <td colspan="2">鏆傛棤妤兼爧淇℃伅锛岃鍏堟柊寤恒€?/td>
+            </tr>
+            <tr th:each="building : ${buildings}">
+                <td th:text="${building.name()}">绱崋1鍙锋ゼ</td>
+                <td style="text-align: right;">
+                    <div role="group">
+                        <a th:href="@{/view/admin/dorms/buildings/{id}/edit(id=${building.id()})}" role="button" class="secondary outline">缂栬緫</a>
+                        <form th:action="@{/view/admin/dorms/buildings/{id}/delete(id=${building.id()})}" method="post" style="display: inline;" onsubmit="return confirm('纭畾瑕佸垹闄ゆ妤兼爧鍚楋紵鍏朵笅鐨勬埧闂村拰搴婁綅涔熷皢琚垹闄ゃ€?);">
+                            <button type="submit" class="contrast outline">鍒犻櫎</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </figure>
+    <a th:href="@{/view/admin/dashboard}">鈫?杩斿洖涓婚潰鏉?/a>
+</section>
+</body>
+</html>
+----------
+.\src\main\resources\templates\admin\dorm\room-details.html:
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title>鎴块棿璇︽儏 - [[${room.buildingName()}]] [[${room.roomNumber()}]]</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <nav aria-label="breadcrumb">
+        <ul>
+            <li><a th:href="@{/view/admin/dorms/buildings}">妤兼爧绠＄悊</a></li>
+            <li><a th:href="@{/view/admin/dorms/rooms}">鎴块棿绠＄悊</a></li>
+            <li>鎴块棿璇︽儏</li>
+        </ul>
+    </nav>
+
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <hgroup style="margin-bottom: 0;">
+            <h2>鎴块棿璇︽儏: [[${room.buildingName()}]] - [[${room.roomNumber()}]]</h2>
+            <h3>绠＄悊璇ユ埧闂翠笅鐨勬墍鏈夊簥浣嶃€?/h3>
+        </hgroup>
+    </div>
+
+    <!-- Success/Error Messages -->
+    <div th:if="${successMessage}" class="success" th:text="${successMessage}" style="margin-bottom: 1rem;"></div>
+    <div th:if="${errorMessage}" class="error" th:text="${errorMessage}" style="margin-bottom: 1rem;"></div>
+
+    <div class="grid">
+        <!-- 搴婁綅鍒楄〃 -->
+        <article>
+            <h4 style="margin-bottom: 1rem;">搴婁綅鍒楄〃 ([[${#lists.size(beds)}]] / [[${room.capacity()}]])</h4>
+            <div th:if="${#lists.isEmpty(beds)}">
+                <p>姝ゆ埧闂存殏鏃犲簥浣嶃€?/p>
+            </div>
+            <div th:unless="${#lists.isEmpty(beds)}">
+                <table role="grid">
+                    <thead>
+                    <tr>
+                        <th>搴婁綅鍙?/th>
+                        <th style="text-align: right;">鎿嶄綔</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr th:each="bed : ${beds}">
+                        <td th:text="${bed.bedNumber()} + ' 鍙峰簥'">1 鍙峰簥</td>
+                        <td style="text-align: right;">
+                            <form th:action="@{/view/admin/dorms/beds/{bedId}/delete(bedId=${bed.id()})}" method="post" style="display: inline;" onsubmit="return confirm('纭畾瑕佸垹闄?' + [[${bed.bedNumber()}]] + ' 鍙峰簥鍚楋紵');">
+                                <input type="hidden" name="roomId" th:value="${room.id()}"/>
+                                <button type="submit" class="contrast outline" style="padding: 0.25rem 0.5rem; font-size: 0.875rem;">鍒犻櫎</button>
+                            </form>
+                        </td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+        </article>
+
+        <!-- 鎵归噺娣诲姞搴婁綅 -->
+        <article>
+            <h4>鎵归噺娣诲姞搴婁綅</h4>
+            <form th:action="@{/view/admin/dorms/rooms/{roomId}/beds/create-batch(roomId=${room.id()})}"
+                  th:object="${bedCreateDto}"
+                  method="post">
+                <p>绯荤粺灏嗚嚜鍔ㄤ粠褰撳墠鏈€澶у簥浣嶅彿寮€濮嬶紝杩炵画鍒涘缓鎸囧畾鏁伴噺鐨勫簥浣嶃€?/p>
+                <label for="bedCount">
+                    娣诲姞鏁伴噺
+                    <input type="number" id="bedCount" name="bedCount" th:field="*{bedCount}" min="1" required
+                           th:aria-invalid="${#fields.hasErrors('bedCount')} ? 'true' : 'false'">
+                    <small th:if="${#fields.hasErrors('bedCount')}" th:errors="*{bedCount}" class="error"></small>
+                </label>
+                <button type="submit">纭娣诲姞</button>
+            </form>
+        </article>
+    </div>
+</section>
+</body>
+</html>
+----------
+.\src\main\resources\templates\admin\dorm\room-form.html:
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title th:text="${pageTitle}">鎴块棿琛ㄥ崟</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <hgroup>
+        <h2 th:text="${pageTitle}">鏂板缓/缂栬緫鎴块棿</h2>
+        <h3 th:text="${roomId == null} ? '鍒涘缓涓€涓柊鐨勬埧闂淬€? : '淇敼鐜版湁鎴块棿鐨勪俊鎭€?"></h3>
+    </hgroup>
+
+    <article>
+        <form th:action="${roomId == null} ? @{/view/admin/dorms/rooms/create} : @{/view/admin/dorms/rooms/{id}/update(id=${roomId})}"
+              th:object="${roomDto}"
+              method="post">
+
+            <label for="buildingId">
+                鎵€灞炴ゼ鏍?
+                <select id="buildingId" th:field="*{buildingId}" required
+                        th:aria-invalid="${#fields.hasErrors('buildingId')} ? 'true' : 'false'">
+                    <option value="">璇烽€夋嫨涓€涓ゼ鏍?/option>
+                    <option th:each="building : ${buildings}"
+                            th:value="${building.id()}"
+                            th:text="${building.name()}"></option>
+                </select>
+                <small th:if="${#fields.hasErrors('buildingId')}" th:errors="*{buildingId}" class="error"></small>
+            </label>
+
+            <div class="grid">
+                <label for="roomNumber">
+                    鎴块棿鍙?
+                    <input type="text" id="roomNumber" th:field="*{roomNumber}" placeholder="渚嬪: 301, 402B" required
+                           th:aria-invalid="${#fields.hasErrors('roomNumber')} ? 'true' : 'false'">
+                    <small th:if="${#fields.hasErrors('roomNumber')}" th:errors="*{roomNumber}" class="error"></small>
+                </label>
+                <label for="capacity">
+                    瀹归噺
+                    <input type="number" id="capacity" th:field="*{capacity}" min="1" required
+                           th:aria-invalid="${#fields.hasErrors('capacity')} ? 'true' : 'false'">
+                    <small th:if="${#fields.hasErrors('capacity')}" th:errors="*{capacity}" class="error"></small>
+                </label>
+            </div>
+
+            <fieldset>
+                <legend>鎬у埆绫诲瀷</legend>
+                <label for="male">
+                    <input type="radio" id="male" th:field="*{genderType}" value="MALE">
+                    鐢?
+                </label>
+                <label for="female">
+                    <input type="radio" id="female" th:field="*{genderType}" value="FEMALE">
+                    濂?
+                </label>
+            </fieldset>
+
+            <div class="grid">
+                <a th:href="@{/view/admin/dorms/rooms}" role="button" class="secondary outline">鍙栨秷</a>
+                <button type="submit" th:text="${roomId == null} ? '鍒涘缓鎴块棿' : '淇濆瓨鏇存敼'">鎻愪氦</button>
+            </div>
+        </form>
+    </article>
+</section>
+</body>
+</html>
+----------
+.\src\main\resources\templates\admin\dorm\rooms-list.html:
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title>鎴块棿璧勬簮绠＄悊</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <nav aria-label="breadcrumb">
+        <ul>
+            <li><a th:href="@{/view/admin/dorms/buildings}">妤兼爧绠＄悊</a></li>
+            <li>鎴块棿绠＄悊</li>
+        </ul>
+    </nav>
+
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <hgroup style="margin-bottom: 0;">
+            <h2>鎴块棿璧勬簮绠＄悊</h2>
+            <h3>绠＄悊鎵€鏈夋ゼ鏍嬪唴鐨勬埧闂翠俊鎭€?/h3>
+        </hgroup>
+        <a th:href="@{/view/admin/dorms/rooms/new}" role="button" style="margin-bottom: 1rem;">鏂板缓鎴块棿</a>
+    </div>
+
+    <!-- Success/Error Messages -->
+    <div th:if="${successMessage}" class="success" th:text="${successMessage}" style="margin-bottom: 1rem;"></div>
+    <div th:if="${errorMessage}" class="error" th:text="${errorMessage}" style="margin-bottom: 1rem;"></div>
+
+    <!-- Filter Form -->
+    <form th:action="@{/view/admin/dorms/rooms}" method="get" class="grid">
+        <select id="buildingId" name="buildingId" onchange="this.form.submit()">
+            <option value="">鎵€鏈夋ゼ鏍?/option>
+            <option th:each="building : ${buildings}"
+                    th:value="${building.id()}"
+                    th:text="${building.name()}"
+                    th:selected="${building.id().equals(selectedBuildingId)}">
+            </option>
+        </select>
+        <a th:href="@{/view/admin/dorms/rooms}" role="button" class="secondary outline">娓呴櫎绛涢€?/a>
+    </form>
+
+
+    <figure>
+        <table role="grid">
+            <thead>
+            <tr>
+                <th scope="col">鎴块棿鍙?/th>
+                <th scope="col">鎵€灞炴ゼ鏍?/th>
+                <th scope="col">瀹归噺</th>
+                <th scope="col">鎬у埆绫诲瀷</th>
+                <th scope="col" style="text-align: right;">鎿嶄綔</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:if="${#lists.isEmpty(roomDetails)}">
+                <td colspan="5">鏆傛棤鎴块棿淇℃伅锛屾垨褰撳墠绛涢€夋潯浠朵笅鏃犵粨鏋溿€?/td>
+            </tr>
+            <tr th:each="room : ${roomDetails}">
+                <td th:text="${room.roomNumber()}">101</td>
+                <td th:text="${room.buildingName()}">绱崋1鍙锋ゼ</td>
+                <td th:text="${room.capacity()}">4</td>
+                <td th:text="${room.genderType() == 'MALE' ? '鐢? : '濂?}">鐢?/td>
+                <td style="text-align: right;">
+                    <div role="group">
+                        <a th:href="@{/view/admin/dorms/rooms/{id}/details(id=${room.id()})}" role="button">搴婁綅绠＄悊</a>
+                        <a th:href="@{/view/admin/dorms/rooms/{id}/edit(id=${room.id()})}" role="button" class="secondary outline">缂栬緫</a>
+                        <form th:action="@{/view/admin/dorms/rooms/{id}/delete(id=${room.id()})}" method="post" style="display: inline;" onsubmit="return confirm('纭畾瑕佸垹闄ゆ鎴块棿鍚楋紵');">
+                            <button type="submit" class="contrast outline">鍒犻櫎</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </figure>
+    <a th:href="@{/view/admin/dashboard}">鈫?杩斿洖涓婚潰鏉?/a>
+</section>
+</body>
+</html>
+----------
+.\src\main\resources\templates\student\dashboard.html:
+<!DOCTYPE html>
+<html lang="zh-CN"
+      layout:decorate="~{layout}"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+    <title>瀛︾敓涓婚潰鏉?/title>
+</head>
+<body>
+
+<section layout:fragment="content">
+    <hgroup>
+        <h2>瀛︾敓涓婚潰鏉?/h2>
+        <h3>娆㈣繋浣狅紝<span sec:authentication="name">Student</span>鍚屽锛?/h3>
+    </hgroup>
+
+    <!-- Example of conditional content -->
+    <!--
+    <div th:if="${isSurveyOpen}">
+        <article>
+            <h4>鏂扮殑鍒嗛厤闂嵎宸插紑鏀撅紒</h4>
+            <p>璇峰湪鎴鏃ユ湡鍓嶅畬鎴愪釜浜哄亸濂介棶鍗风殑濉啓銆?/p>
+            <footer><a href="/view/student/survey" role="button">绔嬪嵆濉啓</a></footer>
+        </article>
+    </div>
+    -->
+
+    <div class="grid">
+        <article>
+            <h4><a href="#survey" class="contrast">濉啓鍋忓ソ闂嵎</a></h4>
+            <p>鍦ㄥ垎閰嶅懆鏈熷唴锛屽～鍐欏苟鎻愪氦浣犵殑涓汉鍋忓ソ銆?/p>
+            <footer><a href="#survey" role="button">鏌ョ湅闂嵎</a></footer>
+        </article>
+        <article>
+            <h4><a href="#result" class="contrast">鏌ョ湅鍒嗛厤缁撴灉</a></h4>
+            <p>鍦ㄧ粨鏋滃叕甯冨悗锛屾煡鐪嬩綘鐨勫鑸嶅拰瀹ゅ弸淇℃伅銆?/p>
+            <footer><a href="#result" role="button" class="secondary">鏌ョ湅缁撴灉</a></footer>
+        </article>
+        <article>
+            <h4><a href="#support" class="contrast">瀵绘眰甯姪</a></h4>
+            <p>鎻愪氦鍏ヤ綇鍙嶉銆佺敵璇疯皟瀹挎垨娴忚鏀寔鏂囩珷銆?/p>
+            <footer><a href="#support" role="button" class="contrast">娴忚鍐呭</a></footer>
+        </article>
+    </div>
+</section>
+
+</body>
+</html>
+----------
+.\src\test\java\com\smartdorm\backend\controller\AdminDormViewControllerTest.java:
+package com.smartdorm.backend.controller;
+
+import com.smartdorm.backend.dto.DormDtos;
+import com.smartdorm.backend.entity.User;
+import com.smartdorm.backend.repository.UserRepository;
+import com.smartdorm.backend.service.DormResourceService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.web.servlet.MockMvc;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.UUID;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+// 鍏抽敭鍙樻洿 1: 浣跨敤 @SpringBootTest 鍔犺浇瀹屾暣涓婁笅鏂?
+@SpringBootTest
+// 鍏抽敭鍙樻洿 2: 鑷姩閰嶇疆 MockMvc
+@AutoConfigureMockMvc
+@DisplayName("TDD for AdminDormViewController (using @SpringBootTest)")
+public class AdminDormViewControllerTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    // 鎴戜滑浠嶇劧 mock service 灞傦紝浠ラ殧绂?controller 鐨勯€昏緫
+    @MockBean
+    private DormResourceService dormResourceService;
+
+    // 娉ㄦ剰锛氬湪@SpringBootTest妯″紡涓嬶紝鎴戜滑涓嶅啀闇€瑕乵ock SecurityConfig鐨勪緷璧栦簡锛?
+    // 鍥犱负瀹冧滑浼氫粠瀹屾暣鐨勪笂涓嬫枃涓嚜鍔ㄥ姞杞姐€傛垜浠篃涓嶉渶瑕丂Import(SecurityConfig.class)銆?
+    // 浣嗘槸锛屾垜浠粛鐒堕渶瑕佷竴涓凡璁よ瘉鐨勭敤鎴锋潵閫氳繃鏉冮檺妫€鏌ャ€?
+
+    @Test
+    @DisplayName("绠＄悊鍛樿幏鍙栨ゼ鏍嬪垪琛ㄩ〉闈㈠簲鎴愬姛")
+    // 鍏抽敭鍙樻洿 3: 浣跨敤 @WithMockUser 鏉ユā鎷熶竴涓凡鐧诲綍鐨凙DMIN鐢ㄦ埛
+    // 杩欐瘮鎵嬪姩鑾峰彇token瑕佺畝鍗曞緱澶氾紝闈炲父閫傚悎瑙嗗浘灞傛祴璇曘€?
+    @WithMockUser(username = "admin", roles = "ADMIN")
+    void whenListBuildings_thenReturnsListView() throws Exception {
+        when(dormResourceService.getAllBuildings()).thenReturn(Collections.emptyList());
+
+        mockMvc.perform(get("/view/admin/dorms/buildings"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("admin/dorm/buildings-list"))
+                .andExpect(model().attributeExists("buildings"));
+    }
+
+    @Test
+    @DisplayName("绠＄悊鍛樻彁浜ゆ柊寤烘ゼ鏍嬭〃鍗曞簲鎴愬姛骞堕噸瀹氬悜")
+    @WithMockUser(username = "admin", roles = "ADMIN")
+    void whenCreateBuilding_thenRedirects() throws Exception {
+        when(dormResourceService.createBuilding(any(DormDtos.BuildingCreateUpdateDto.class)))
+                .thenReturn(new DormDtos.DormBuildingDto(UUID.randomUUID(), "绱崋1鍙锋ゼ"));
+
+        mockMvc.perform(post("/view/admin/dorms/buildings/create")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("name", "绱崋1鍙锋ゼ")
+                        .with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/view/admin/dorms/buildings"));
+
+        verify(dormResourceService, times(1)).createBuilding(any(DormDtos.BuildingCreateUpdateDto.class));
+    }
+
+    @Test
+    @DisplayName("绠＄悊鍛樻彁浜ゅ垹闄ゆゼ鏍嬭姹傚簲鎴愬姛骞堕噸瀹氬悜")
+    @WithMockUser(username = "admin", roles = "ADMIN")
+    void whenDeleteBuilding_thenRedirects() throws Exception {
+        UUID buildingId = UUID.randomUUID();
+        doNothing().when(dormResourceService).deleteBuilding(buildingId);
+
+        mockMvc.perform(post("/view/admin/dorms/buildings/" + buildingId + "/delete")
+                        .with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/view/admin/dorms/buildings"));
+
+        verify(dormResourceService, times(1)).deleteBuilding(buildingId);
+    }
+
+    // --- Room Tests ---
+
+    @Test
+    @DisplayName("绠＄悊鍛樿幏鍙栨埧闂村垪琛ㄩ〉闈㈠簲鎴愬姛")
+    @WithMockUser(username = "admin", roles = "ADMIN")
+    void whenListRooms_thenReturnsListView() throws Exception {
+        when(dormResourceService.getRoomDetails()).thenReturn(Collections.emptyList());
+        when(dormResourceService.getAllBuildings()).thenReturn(Collections.emptyList());
+
+        mockMvc.perform(get("/view/admin/dorms/rooms"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("admin/dorm/rooms-list"))
+                .andExpect(model().attributeExists("roomDetails"))
+                .andExpect(model().attributeExists("buildings"));
+    }
+
+    @Test
+    @DisplayName("绠＄悊鍛樻彁浜ゆ柊寤烘埧闂磋〃鍗曞簲鎴愬姛骞堕噸瀹氬悜")
+    @WithMockUser(username = "admin", roles = "ADMIN")
+    void whenCreateRoom_thenRedirects() throws Exception {
+        UUID buildingId = UUID.randomUUID();
+        when(dormResourceService.createRoom(any(DormDtos.RoomCreateUpdateDto.class)))
+                .thenReturn(new DormDtos.DormRoomDto(UUID.randomUUID(), buildingId, "101", 4, "MALE"));
+
+        mockMvc.perform(post("/view/admin/dorms/rooms/create")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("buildingId", buildingId.toString())
+                        .param("roomNumber", "101")
+                        .param("capacity", "4")
+                        .param("genderType", "MALE")
+                        .with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/view/admin/dorms/rooms"));
+
+        verify(dormResourceService, times(1)).createRoom(any(DormDtos.RoomCreateUpdateDto.class));
+    }
+
+    @Test
+    @DisplayName("绠＄悊鍛樿幏鍙栨埧闂磋鎯呬笌搴婁綅鍒楄〃椤甸潰搴旀垚鍔?)
+    @WithMockUser(roles = "ADMIN")
+    void whenShowRoomDetails_thenReturnsDetailsView() throws Exception {
+        UUID roomId = UUID.randomUUID();
+        DormResourceService.RoomDetailDto mockRoomDetails = new DormResourceService.RoomDetailDto(roomId, "101", 4, "MALE", UUID.randomUUID(), "Test Building");
+
+        when(dormResourceService.getRoomDetails()).thenReturn(List.of(mockRoomDetails));
+        when(dormResourceService.getBedsForRoom(roomId)).thenReturn(Collections.emptyList());
+
+        mockMvc.perform(get("/view/admin/dorms/rooms/" + roomId + "/details"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("admin/dorm/room-details"))
+                .andExpect(model().attributeExists("room"))
+                .andExpect(model().attributeExists("beds"));
+    }
+
+    @Test
+    @DisplayName("绠＄悊鍛樻壒閲忓垱寤哄簥浣嶅簲鎴愬姛骞堕噸瀹氬悜鍥炶鎯呴〉")
+    @WithMockUser(roles = "ADMIN")
+    void whenCreateBedsBatch_thenRedirectsToDetails() throws Exception {
+        UUID roomId = UUID.randomUUID();
+
+        mockMvc.perform(post("/view/admin/dorms/rooms/" + roomId + "/beds/create-batch")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("bedCount", "4")
+                        .with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/view/admin/dorms/rooms/" + roomId + "/details"));
+
+        verify(dormResourceService, times(1)).createBedsForRoom(eq(roomId), any(DormDtos.BedCreateRequestDto.class));
+    }
+}
 ----------
 .\src\test\java\com\smartdorm\backend\controller\AuthControllerIntegrationTest.java:
 // src/test/java/com/smartdorm/backend/controller/AuthControllerIntegrationTest.java
@@ -3127,7 +4205,7 @@ class AuthControllerIntegrationTest {
     @Test
     @DisplayName("鍏紑绔偣璁块棶: /ping 搴旀棤闇€璁よ瘉鍗冲彲璁块棶")
     void ping_publicEndpoint_shouldBeAccessible() throws Exception {
-        mockMvc.perform(get("/ping"))
+        mockMvc.perform(get("/api/ping"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ok"));
     }
@@ -3135,7 +4213,7 @@ class AuthControllerIntegrationTest {
     @Test
     @DisplayName("鍙椾繚鎶ょ鐐硅闂け璐? 鏃燭oken搴旇繑鍥?01 Unauthorized")
     void accessSecuredEndpoint_withoutToken_shouldReturnUnauthorized() throws Exception {
-        mockMvc.perform(get("/users/me"))
+        mockMvc.perform(get("/api/users/me"))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -3157,7 +4235,7 @@ class AuthControllerIntegrationTest {
         assertThat(token).isNotNull();
 
         // 姝ラ 2: 浣跨敤鑾峰彇鍒扮殑token璁块棶鍙椾繚鎶ょ殑 /users/me 绔偣
-        mockMvc.perform(get("/users/me")
+        mockMvc.perform(get("/api/users/me")
                         .header("Authorization", "Bearer " + token)) // 鍦ㄨ姹傚ご涓檮甯oken
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.studentId").value("S001"))
@@ -3319,6 +4397,68 @@ class CycleControllerIntegrationTest {
 
         mockMvc.perform(delete("/api/admin/cycles/" + cycleId).header("Authorization", adminToken))
                 .andExpect(status().isNoContent());
+    }
+}
+----------
+.\src\test\java\com\smartdorm\backend\controller\DashboardControllerTest.java:
+package com.smartdorm.backend.controller;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.annotation.Transactional;
+
+import static org.hamcrest.Matchers.containsString;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+@SpringBootTest
+@AutoConfigureMockMvc
+@Transactional
+@DisplayName("TDD for DashboardController")
+class DashboardControllerTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Test
+    @DisplayName("Admin鐢ㄦ埛璁块棶/view/admin/dashboard搴旀垚鍔熷苟杩斿洖绠＄悊鍛橀潰鏉?)
+    @WithMockUser(username = "test-admin", roles = "ADMIN")
+    void whenAdminAccessesDashboard_thenReturnsAdminDashboardView() throws Exception {
+        mockMvc.perform(get("/view/admin/dashboard"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("admin/dashboard"))
+                .andExpect(content().string(containsString("绠＄悊鍛樹富闈㈡澘")));
+    }
+
+    @Test
+    @DisplayName("Student鐢ㄦ埛璁块棶/view/student/dashboard搴旀垚鍔熷苟杩斿洖瀛︾敓闈㈡澘")
+    @WithMockUser(username = "test-student", roles = "STUDENT")
+    void whenStudentAccessesDashboard_thenReturnsStudentDashboardView() throws Exception {
+        mockMvc.perform(get("/view/student/dashboard"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("student/dashboard"))
+                .andExpect(content().string(containsString("瀛︾敓涓婚潰鏉?)));
+    }
+
+    @Test
+    @DisplayName("Student鐢ㄦ埛璁块棶绠＄悊鍛橀潰鏉垮簲杩斿洖403 Forbidden")
+    @WithMockUser(username = "test-student", roles = "STUDENT")
+    void whenStudentAccessesAdminDashboard_thenIsForbidden() throws Exception {
+        mockMvc.perform(get("/view/admin/dashboard"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("鏈璇佺敤鎴疯闂换浣曢潰鏉块兘搴旈噸瀹氬悜鍒扮櫥褰曢〉")
+    void whenUnauthenticatedAccessDashboard_thenRedirectsToLogin() throws Exception {
+        mockMvc.perform(get("/view/admin/dashboard"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrlPattern("**/login"));
     }
 }
 ----------

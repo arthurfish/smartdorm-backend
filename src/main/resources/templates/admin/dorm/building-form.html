@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title th:text="${pageTitle}">楼栋表单</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <hgroup>
+        <h2 th:text="${pageTitle}">新建/编辑楼栋</h2>
+        <h3 th:text="${buildingId == null} ? '创建一个新的宿舍楼。' : '修改现有宿舍楼的信息。'"></h3>
+    </hgroup>
+
+    <article>
+        <form th:action="${buildingId == null} ? @{/view/admin/dorms/buildings/create} : @{/view/admin/dorms/buildings/{id}/update(id=${buildingId})}"
+              th:object="${buildingDto}"
+              method="post">
+
+            <label for="name">
+                楼栋名称
+                <input type="text" id="name" th:field="*{name}" placeholder="例如：紫荆1号楼" required
+                       th:aria-invalid="${#fields.hasErrors('name')} ? 'true' : 'false'">
+                <small th:if="${#fields.hasErrors('name')}" th:errors="*{name}" class="error"></small>
+            </label>
+
+            <div class="grid">
+                <a th:href="@{/view/admin/dorms/buildings}" role="button" class="secondary outline">取消</a>
+                <button type="submit" th:text="${buildingId == null} ? '创建楼栋' : '保存更改'">提交</button>
+            </div>
+        </form>
+    </article>
+</section>
+</body>
+</html>

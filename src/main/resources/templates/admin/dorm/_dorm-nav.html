@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<body>
+
+<!-- 这个片段将被包含在所有宿舍资源管理的页面中 -->
+<nav th:fragment="subnav(activeTab)" aria-label="breadcrumb">
+    <ul>
+        <li>
+            <a th:href="@{/view/admin/dorms/buildings}"
+               th:aria-current="${activeTab == 'buildings' ? 'page' : null}">
+                楼栋管理
+            </a>
+        </li>
+        <li>
+            <a th:href="@{/view/admin/dorms/rooms}"
+               th:aria-current="${activeTab == 'rooms' ? 'page' : null}">
+                房间管理
+            </a>
+        </li>
+    </ul>
+</nav>
+
+</body>
+</html>

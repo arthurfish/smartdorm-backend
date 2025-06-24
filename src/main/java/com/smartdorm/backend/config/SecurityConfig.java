@@ -71,29 +71,30 @@ public class SecurityConfig {
     }
 
     @Bean
-    @Order(2) // 视图安全链，处理有状态的表单登录和页面访问
+    @Order(2) // View Security Chain (for Thymeleaf)
     public SecurityFilterChain formLoginFilterChain(HttpSecurity http) throws Exception {
         http
                 .authorizeHttpRequests(auth -> auth
-                        // 公开访问的资源
-                        .requestMatchers("/css/**", "/js/**", "/error", "/ping", "/login", "/perform_login").permitAll()
-                        // 权限控制
+                        // Publicly accessible resources
+                        .requestMatchers("/css/**", "/js/**", "/error", "/login", "/perform_login").permitAll()
+                        // Role-based access control for views
                         .requestMatchers("/view/admin/**").hasRole("ADMIN")
                         .requestMatchers("/view/student/**").hasRole("STUDENT")
-                        // 其他任何请求都需要认证
+                        // Any other request must be authenticated
                         .anyRequest().authenticated()
                 )
                 .formLogin(form -> form
-                        .loginPage("/login") // 指定登录页面的 URL
-                        .loginProcessingUrl("/perform_login") // 处理登录请求的 URL
-                        .defaultSuccessUrl("/view/home", true) // 登录成功后的重定向 URL
-                        .failureUrl("/login?error=true") // 登录失败后的 URL
+                        .loginPage("/login")
+                        .loginProcessingUrl("/perform_login")
+                        .defaultSuccessUrl("/view/home", true) // Redirect to home after login
+                        .failureUrl("/login?error=true")
                 )
                 .logout(logout -> logout
                         .logoutUrl("/perform_logout")
                         .logoutSuccessUrl("/login?logout=true")
+                        .invalidateHttpSession(true)
+                        .deleteCookies("JSESSIONID")
                 );
-        // 注意：这里不需要禁用 CSRF，因为表单登录和 Thymeleaf 会处理它
         return http.build();
     }
 }

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title>房间详情 - [[${room.buildingName()}]] [[${room.roomNumber()}]]</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <div th:replace="~{admin/dorm/_dorm-nav :: subnav(activeTab='rooms')}"></div>
+
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <hgroup style="margin-bottom: 0;">
+            <h2>房间详情: [[${room.buildingName()}]] - [[${room.roomNumber()}]]</h2>
+            <h3>管理该房间下的所有床位。</h3>
+        </hgroup>
+    </div>
+
+    <!-- Success/Error Messages -->
+    <div th:if="${successMessage}" class="success" th:text="${successMessage}" style="margin-bottom: 1rem;"></div>
+    <div th:if="${errorMessage}" class="error" th:text="${errorMessage}" style="margin-bottom: 1rem;"></div>
+
+    <div class="grid">
+        <!-- 床位列表 -->
+        <article>
+            <h4 style="margin-bottom: 1rem;">床位列表 ([[${#lists.size(beds)}]] / [[${room.capacity()}]])</h4>
+            <div th:if="${#lists.isEmpty(beds)}">
+                <p>此房间暂无床位。</p>
+            </div>
+            <div th:unless="${#lists.isEmpty(beds)}">
+                <table role="grid">
+                    <thead>
+                    <tr>
+                        <th>床位号</th>
+                        <th style="text-align: right;">操作</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr th:each="bed : ${beds}">
+                        <td th:text="${bed.bedNumber()} + ' 号床'">1 号床</td>
+                        <td style="text-align: right;">
+                            <form th:id="'deleteForm-' + ${bed.id()}" th:action="@{/view/admin/dorms/beds/{bedId}/delete(bedId=${bed.id()})}" method="post" style="display: inline;">
+                                <input type="hidden" name="roomId" th:value="${room.id()}"/>
+
+                                <!--
+                                    关键修复:
+                                    1. 我们将确认逻辑移到了 <button> 的 th:onclick 事件中。
+                                    2. 使用 |...| 符号进行字符串拼接，这是Thymeleaf的字面量替换(Literal Substitution)。
+                                    3. 使用 [[...]] 进行JavaScript内联，确保变量被正确渲染为JS代码的一部分。
+                                    4. onclick 返回 false 时，将阻止表单的默认提交行为。
+                                -->
+                                <button type="button"
+                                        th:onclick="|if(confirm('确定要删除 ' + [[${bed.bedNumber()}]] + ' 号床吗？')) document.getElementById('deleteForm-' + [[${bed.id()}]].toString()).submit();|"
+                                        class="contrast outline" style="padding: 0.25rem 0.5rem; font-size: 0.875rem;">
+                                    删除
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+        </article>
+
+        <!-- 批量添加床位 -->
+        <article>
+            <h4>批量添加床位</h4>
+            <form th:action="@{/view/admin/dorms/rooms/{roomId}/beds/create-batch(roomId=${room.id()})}"
+                  th:object="${bedCreateDto}"
+                  method="post">
+                <p>系统将自动从当前最大床位号开始，连续创建指定数量的床位。</p>
+                <label for="bedCount">
+                    添加数量
+                    <input type="number" id="bedCount" name="bedCount" th:field="*{bedCount}" min="1" required
+                           th:aria-invalid="${#fields.hasErrors('bedCount')} ? 'true' : 'false'">
+                    <small th:if="${#fields.hasErrors('bedCount')}" th:errors="*{bedCount}" class="error"></small>
+                </label>
+                <button type="submit">确认添加</button>
+            </form>
+        </article>
+    </div>
+</section>
+</body>
+</html>

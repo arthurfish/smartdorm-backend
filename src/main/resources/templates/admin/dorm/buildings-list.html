@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title>楼栋资源管理</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <div th:replace="~{admin/dorm/_dorm-nav :: subnav(activeTab='buildings')}"></div>
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <hgroup style="margin-bottom: 0;">
+            <h2>楼栋资源管理</h2>
+            <h3>管理校园内的所有宿舍楼。</h3>
+        </hgroup>
+        <a th:href="@{/view/admin/dorms/buildings/new}" role="button" style="margin-bottom: 1rem;">新建楼栋</a>
+    </div>
+
+    <!-- Success/Error Messages -->
+    <div th:if="${successMessage}" class="success" th:text="${successMessage}" style="margin-bottom: 1rem;"></div>
+    <div th:if="${errorMessage}" class="error" th:text="${errorMessage}" style="margin-bottom: 1rem;"></div>
+
+    <figure>
+        <table role="grid">
+            <thead>
+            <tr>
+                <th scope="col">楼栋名称</th>
+                <th scope="col" style="text-align: right;">操作</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:if="${#lists.isEmpty(buildings)}">
+                <td colspan="2">暂无楼栋信息，请先新建。</td>
+            </tr>
+            <tr th:each="building : ${buildings}">
+                <td th:text="${building.name()}">紫荆1号楼</td>
+                <td style="text-align: right;">
+                    <div role="group">
+                        <a th:href="@{/view/admin/dorms/buildings/{id}/edit(id=${building.id()})}" role="button" class="secondary outline">编辑</a>
+                        <form th:action="@{/view/admin/dorms/buildings/{id}/delete(id=${building.id()})}" method="post" style="display: inline;" onsubmit="return confirm('确定要删除此楼栋吗？其下的房间和床位也将被删除。');">
+                            <button type="submit" class="contrast outline">删除</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </figure>
+    <a th:href="@{/view/admin/dashboard}">← 返回主面板</a>
+</section>
+</body>
+</html>
