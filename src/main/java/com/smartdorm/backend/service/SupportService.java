@@ -67,6 +67,18 @@ public class SupportService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     *  Get a single swap request by its ID.
+     * Needed for the admin details view.
+     * @param requestId The ID of the swap request.
+     * @return The SwapRequestDto.
+     */
+    public SwapRequestDto getSwapRequestById(UUID requestId) {
+        return swapRequestRepository.findById(requestId)
+                .map(this::mapToSwapRequestDto)
+                .orElseThrow(() -> new ResourceNotFoundException("Swap request not found with id: " + requestId));
+    }
+
     public SwapRequestDto processSwapRequest(UUID requestId, SwapRequestUpdateDto dto) {
         SwapRequest request = swapRequestRepository.findById(requestId)
                 .orElseThrow(() -> new ResourceNotFoundException("Swap request not found with id: " + requestId));
@@ -109,6 +121,10 @@ public class SupportService {
             articles = articleRepository.findAll();
         }
         return articles.stream().map(this::mapToArticleDto).collect(Collectors.toList());
+    }
+
+    public List<String> getArticleCategories() {
+        return articleRepository.findDistinctCategories();
     }
 
 

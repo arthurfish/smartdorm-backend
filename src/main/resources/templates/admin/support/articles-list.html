@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title>内容发布管理</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <div th:replace="~{admin/support/_support-nav :: subnav(activeTab='articles')}"></div>
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <hgroup style="margin-bottom: 0;">
+            <h2>内容发布管理</h2>
+            <h3>创建、编辑和发布面向学生的文章。</h3>
+        </hgroup>
+        <a th:href="@{/view/admin/support/articles/new}" role="button" style="margin-bottom: 1rem;">发布新文章</a>
+    </div>
+
+    <div th:if="${successMessage}" class="success" th:text="${successMessage}" style="margin-bottom: 1rem;"></div>
+    <div th:if="${errorMessage}" class="error" th:text="${errorMessage}" style="margin-bottom: 1rem;"></div>
+
+    <figure>
+        <table>
+            <thead>
+            <tr>
+                <th>标题</th>
+                <th>分类</th>
+                <th>作者</th>
+                <th>发布时间</th>
+                <th style="text-align: right;">操作</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:if="${#lists.isEmpty(articles)}"><td colspan="5">暂无文章。</td></tr>
+            <tr th:each="article : ${articles}">
+                <td th:text="${article.title()}"></td>
+                <td th:text="${article.category()}"></td>
+                <td th:text="${article.authorName()}"></td>
+                <td th:text="${#temporals.format(article.createdAt(), 'yyyy-MM-dd')}"></td>
+                <td style="text-align: right;">
+                    <div role="group">
+                        <a th:href="@{/view/admin/support/articles/{id}/edit(id=${article.id()})}" role="button" class="secondary outline">编辑</a>
+                        <form th:action="@{/view/admin/support/articles/{id}/delete(id=${article.id()})}" method="post" onsubmit="return confirm('确定要删除这篇文章吗？')">
+                            <button type="submit" class="contrast outline">删除</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </figure>
+</section>
+</body>
+</html>

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title th:text="${pageTitle}">文章表单</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <div th:replace="~{admin/support/_support-nav :: subnav(activeTab='articles')}"></div>
+    <hgroup>
+        <h2 th:text="${pageTitle}">发布新文章</h2>
+        <h3>填写文章的标题、分类和内容。</h3>
+    </hgroup>
+
+    <article>
+        <form th:action="@{/view/admin/support/articles__${articleId == null ? '/create' : '/' + articleId + '/update'} __}"
+              th:object="${articleDto}"
+              method="post">
+                      th:object="${articleDto}"
+              method="post">
+
+            <label for="title">标题</label>
+            <input type="text" id="title" th:field="*{title}" required th:aria-invalid="${#fields.hasErrors('title')}">
+            <small th:if="${#fields.hasErrors('title')}" th:errors="*{title}" class="error"></small>
+
+            <label for="category">分类</label>
+            <input type="text" id="category" th:field="*{category}" placeholder="例如：心理健康, 宿舍文化" required th:aria-invalid="${#fields.hasErrors('category')}">
+            <small th:if="${#fields.hasErrors('category')}" th:errors="*{category}" class="error"></small>
+
+            <label for="content">内容 (支持Markdown)</label>
+            <textarea id="content" th:field="*{content}" rows="10" required th:aria-invalid="${#fields.hasErrors('content')}"></textarea>
+            <small th:if="${#fields.hasErrors('content')}" th:errors="*{content}" class="error"></small>
+
+            <div class="grid">
+                <a th:href="@{/view/admin/support/articles}" role="button" class="secondary outline">取消</a>
+                <button type="submit" th:text="${articleId == null} ? '发布文章' : '保存更改'"></button>
+            </div>
+        </form>
+    </article>
+</section>
+</body>
+</html>

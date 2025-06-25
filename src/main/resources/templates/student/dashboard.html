@@ -33,9 +33,10 @@
             <footer><a th:href="@{/view/student/result}" role="button" class="secondary">查看结果</a></footer>
         </article>
         <article>
-            <h4><a href="#support" class="contrast">寻求帮助</a></h4>
+            <!-- [UPDATED] Link to the new support section -->
+            <h4><a th:href="@{/view/student/support/articles}" class="contrast">寻求帮助</a></h4>
             <p>提交入住反馈、申请调宿或浏览支持文章。</p>
-            <footer><a href="#support" role="button" class="contrast">浏览内容</a></footer>
+            <footer><a th:href="@{/view/student/support/articles}" role="button" class="contrast">浏览内容</a></footer>
         </article>
     </div>
 </section>

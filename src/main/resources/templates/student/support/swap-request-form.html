@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title>申请调换宿舍</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <hgroup>
+        <h2>申请调换宿舍</h2>
+        <h3>请详细说明您申请调换宿舍的原因，管理员将会进行审核。</h3>
+    </hgroup>
+
+    <article>
+        <form th:action="@{/view/student/support/request-swap}" th:object="${swapRequestDto}" method="post">
+            <label for="reason">申请原因</label>
+            <textarea id="reason" th:field="*{reason}" rows="5" required placeholder="例如：与室友作息差异过大，已尝试沟通但无法调和..."></textarea>
+            <small th:if="${#fields.hasErrors('reason')}" th:errors="*{reason}" class="error"></small>
+
+            <div class="grid">
+                <a th:href="@{/view/student/dashboard}" role="button" class="secondary outline">返回</a>
+                <button type="submit">提交申请</button>
+            </div>
+        </form>
+    </article>
+</section>
+</body>
+</html>

@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<body>
+<nav th:fragment="subnav(activeTab)" aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+    <ul>
+        <li>
+            <a th:href="@{/view/admin/support/swap-requests}"
+               th:aria-current="${activeTab == 'swap' ? 'page' : null}">
+                调宿申请管理
+            </a>
+        </li>
+        <li>
+            <a th:href="@{/view/admin/support/articles}"
+               th:aria-current="${activeTab == 'articles' ? 'page' : null}">
+                内容发布管理
+            </a>
+        </li>
+    </ul>
+</nav>
+</body>
+</html>

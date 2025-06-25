@@ -617,6 +617,7 @@ package com.smartdorm.backend.controller;
 
 import com.smartdorm.backend.dto.CycleDtos;
 import com.smartdorm.backend.exception.ResourceNotFoundException;
+import com.smartdorm.backend.service.AdminAssignmentService;
 import com.smartdorm.backend.service.CycleManagementService;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -640,8 +641,13 @@ public class AdminCycleViewController {
 
     private final CycleManagementService cycleService;
 
-    public AdminCycleViewController(CycleManagementService cycleService) {
+    // 娉ㄥ叆鏂扮殑 Service
+    private final AdminAssignmentService adminAssignmentService;
+
+    // 鏇存柊鏋勯€犲嚱鏁?
+    public AdminCycleViewController(CycleManagementService cycleService, AdminAssignmentService adminAssignmentService) {
         this.cycleService = cycleService;
+        this.adminAssignmentService = adminAssignmentService;
     }
 
     @GetMapping
@@ -759,6 +765,44 @@ public class AdminCycleViewController {
         // 5. 鎿嶄綔鎴愬姛
         redirectAttributes.addFlashAttribute("successMessage", "闂嵎缁村害 '" + dto.getPrompt() + "' 鍒涘缓鎴愬姛锛?);
         return "redirect:/view/admin/cycles/" + cycleId + "/dimensions";
+    }
+
+    /**
+     * [Phase 5] 瑙﹀彂涓€閿垎閰?
+     * 瀵瑰簲 use case: ADM-03
+     */
+    @PostMapping("/{cycleId}/trigger-assignment")
+    public String triggerAssignment(@PathVariable UUID cycleId, RedirectAttributes redirectAttributes) {
+        try {
+            adminAssignmentService.triggerAssignment(cycleId);
+            redirectAttributes.addFlashAttribute("successMessage", "鍒嗛厤娴佺▼宸叉垚鍔熷惎鍔ㄥ苟瀹屾垚锛?);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("errorMessage", "鍒嗛厤澶辫触: " + e.getMessage());
+        }
+        // 鍒嗛厤瀹屾垚鍚庯紝閲嶅畾鍚戝埌缁撴灉椤甸潰
+        return "redirect:/view/admin/cycles/" + cycleId + "/results";
+    }
+
+    /**
+     * [Phase 5] 鏄剧ず鍒嗛厤缁撴灉鍒楄〃
+     * 瀵瑰簲 use case: ADM-04
+     */
+    @GetMapping("/{cycleId}/results")
+    public String showResultsList(@PathVariable UUID cycleId, Model model) {
+        model.addAttribute("cycle", cycleService.getCycleById(cycleId));
+        model.addAttribute("results", adminAssignmentService.getAssignmentResults(cycleId));
+        return "admin/cycle/results-list";
+    }
+
+    /**
+     * [Phase 5] 鏄剧ず鍒嗛厤璐ㄩ噺鎶ュ憡
+     * 瀵瑰簲 use case: ADM-08
+     */
+    @GetMapping("/{cycleId}/quality-report")
+    public String showQualityReport(@PathVariable UUID cycleId, Model model) {
+        model.addAttribute("cycle", cycleService.getCycleById(cycleId));
+        model.addAttribute("report", adminAssignmentService.validateResults(cycleId));
+        return "admin/cycle/quality-report";
     }
 }
 
@@ -1427,6 +1471,105 @@ public class StudentSupportController {
     public ResponseEntity<Void> markNotificationAsRead(@PathVariable UUID notificationId, @AuthenticationPrincipal UserDetails userDetails) {
         supportService.markNotificationAsRead(notificationId, getCurrentUser(userDetails));
         return ResponseEntity.noContent().build();
+    }
+}
+----------
+.\src\main\java\com\smartdorm\backend\controller\StudentSurveyViewController.java:
+// src/main/java/com/smartdorm/backend/controller/StudentSurveyViewController.java
+package com.smartdorm.backend.controller;
+
+import com.smartdorm.backend.dto.StudentDtos;
+import com.smartdorm.backend.entity.User;
+import com.smartdorm.backend.exception.ResourceNotFoundException;
+import com.smartdorm.backend.repository.UserRepository;
+import com.smartdorm.backend.service.StudentService;
+import jakarta.validation.Valid;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+@Controller
+@RequestMapping("/view/student")
+@PreAuthorize("hasRole('STUDENT')")
+public class StudentSurveyViewController {
+
+    private final StudentService studentService;
+    private final UserRepository userRepository;
+
+    public StudentSurveyViewController(StudentService studentService, UserRepository userRepository) {
+        this.studentService = studentService;
+        this.userRepository = userRepository;
+    }
+
+    /**
+     * 闂嵎琛ㄥ崟 DTO (View Layer)
+     * 涓轰簡鏂逛究Thymeleaf琛ㄥ崟缁戝畾锛屾垜浠垱寤轰竴涓笓闂ㄧ殑瑙嗗浘灞侱TO銆?
+     * Controller灏嗗湪鎺ユ敹鍒板畠涔嬪悗锛屽啀杞崲鎴怱ervice灞傞渶瑕佺殑DTO銆?
+     */
+    public static class SurveySubmissionDto {
+        private Map<UUID, Double> answers;
+
+        // Getters and Setters
+        public Map<UUID, Double> getAnswers() { return answers; }
+        public void setAnswers(Map<UUID, Double> answers) { this.answers = answers; }
+    }
+
+    @GetMapping("/survey")
+    public String showSurveyForm(Model model) {
+        try {
+            StudentDtos.SurveyForStudentDto surveyDto = studentService.getSurveyForStudent();
+            model.addAttribute("surveyDto", surveyDto);
+            model.addAttribute("submissionDto", new SurveySubmissionDto());
+            return "student/survey-form";
+        } catch (ResourceNotFoundException e) {
+            model.addAttribute("errorMessage", "褰撳墠娌℃湁寮€鏀剧殑闂嵎锛岃绋嶅悗鍐嶈瘯銆?);
+            return "student/dashboard"; // 鎴栬€呬竴涓笓闂ㄧ殑閿欒/鎻愮ず椤甸潰
+        }
+    }
+
+    @PostMapping("/survey/submit")
+    public String submitSurvey(@ModelAttribute SurveySubmissionDto submissionDto,
+                               @AuthenticationPrincipal UserDetails userDetails,
+                               RedirectAttributes redirectAttributes) {
+
+        // 灏嗚鍥惧眰鐨?Map<UUID, Double> 杞崲涓?Service 灞傞渶瑕佺殑 List<ResponseItem>
+        List<StudentDtos.ResponseItem> responses = submissionDto.getAnswers().entrySet().stream()
+                .map(entry -> new StudentDtos.ResponseItem(entry.getKey(), entry.getValue()))
+                .collect(Collectors.toList());
+
+        StudentDtos.UserResponseSubmitDto serviceDto = new StudentDtos.UserResponseSubmitDto(responses);
+
+        User currentUser = userRepository.findByStudentId(userDetails.getUsername())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        studentService.submitResponses(serviceDto, currentUser);
+
+        redirectAttributes.addFlashAttribute("successMessage", "闂嵎鎻愪氦鎴愬姛锛屾劅璋㈡偍鐨勫弬涓庯紒");
+        return "redirect:/view/student/dashboard";
+    }
+
+    @GetMapping("/result")
+    public String showResult(Model model, @AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            User currentUser = userRepository.findByStudentId(userDetails.getUsername())
+                    .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+            StudentDtos.AssignmentResultStudentDto resultDto = studentService.getStudentResult(currentUser);
+            model.addAttribute("resultDto", resultDto);
+            return "student/result-view";
+        } catch (ResourceNotFoundException e) {
+            model.addAttribute("errorMessage", "鎮ㄧ殑鍒嗛厤缁撴灉灏氭湭鍏竷锛岃鑰愬績绛夊緟銆?);
+            return "student/dashboard";
+        }
     }
 }
 ----------
@@ -4009,55 +4152,161 @@ logging:
 <!DOCTYPE html>
 <html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
 <head>
-    <title>闂嵎绠＄悊 - [[${cycle.name()}]]</title>
+    <!-- [UPDATED] Title is more descriptive now -->
+    <title>闂嵎涓庡垎閰?- [[${cycle.name()}]]</title>
 </head>
 <body>
 <section layout:fragment="content">
+    <!-- [UPDATED] Active tab is now dimensions -->
     <div th:replace="~{admin/cycle/_cycle-nav :: subnav(cycleId=${cycle.id()}, activeTab='dimensions')}"></div>
-    <div style="display: flex; justify-content: space-between; align-items: center;">
+
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
         <hgroup style="margin-bottom: 0;">
-            <h2>闂嵎缁村害绠＄悊: [[${cycle.name()}]]</h2>
-            <h3>鍦ㄦ涓哄懆鏈熻璁￠棶鍗烽棶棰橈紙缁村害锛夈€?/h3>
+            <!-- [UPDATED] Heading is more descriptive now -->
+            <h2>闂嵎涓庡垎閰? [[${cycle.name()}]]</h2>
+            <h3>鍦ㄦ璁捐闂嵎骞惰Е鍙戞渶缁堝垎閰嶃€?/h3>
         </hgroup>
-        <a th:href="@{/view/admin/cycles/{id}/dimensions/new(id=${cycle.id()})}" role="button" style="margin-bottom: 1rem;">鏂板缁村害</a>
+
+        <!-- [NEW] Trigger Assignment Button, conditionally shown -->
+        <form th:if="${cycle.status() == 'OPEN'}"
+              th:action="@{/view/admin/cycles/{id}/trigger-assignment(id=${cycle.id()})}"
+              method="post" onsubmit="return confirm('纭畾瑕佺珛鍗虫墽琛屽垎閰嶅悧锛熸鎿嶄綔灏嗗叧闂棶鍗烽€氶亾骞剁敓鎴愭渶缁堢粨鏋溿€?);"
+              style="margin-bottom: 1rem;">
+            <button type="submit" class="contrast">馃殌 涓€閿垎閰?/button>
+        </form>
+        <div th:if="${cycle.status() != 'OPEN'}" style="margin-bottom: 1rem;">
+            <a role="button" class="secondary" disabled>鍒嗛厤 (浠呭湪'OPEN'鐘舵€佸彲鐢?</a>
+        </div>
     </div>
 
     <div th:if="${successMessage}" class="success" th:text="${successMessage}" style="margin-bottom: 1rem;"></div>
     <div th:if="${errorMessage}" class="error" th:text="${errorMessage}" style="margin-bottom: 1rem;"></div>
 
+    <!-- Existing dimension list table -->
+    <article>
+        <header style="display: flex; justify-content: space-between; align-items: center;">
+            <h5 style="margin: 0;">闂嵎缁村害鍒楄〃</h5>
+            <a th:href="@{/view/admin/cycles/{id}/dimensions/new(id=${cycle.id()})}" role="button" class="outline secondary" style="margin-bottom: 0; padding: 0.5rem 1rem;">鏂板缁村害</a>
+        </header>
+        <figure style="margin:0;">
+            <table role="grid">
+                <thead>
+                <tr>
+                    <th scope="col">闂/鎻愮ず</th>
+                    <th scope="col">Key</th>
+                    <th scope="col">绫诲瀷</th>
+                    <th scope="col">鏉冮噸</th>
+                    <th scope="col" style="text-align: right;">鎿嶄綔</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr th:if="${#lists.isEmpty(dimensions)}">
+                    <td colspan="5">璇ュ懆鏈熸殏鏃犻棶鍗风淮搴︼紝璇峰厛鏂板銆?/td>
+                </tr>
+                <tr th:each="dim : ${dimensions}">
+                    <td th:text="${dim.prompt()}"></td>
+                    <td><code th:text="${dim.dimensionKey()}"></code></td>
+                    <td th:text="${dim.dimensionType()}"></td>
+                    <td th:text="${dim.weight()}"></td>
+                    <td style="text-align: right;">
+                        <div role="group">
+                            <a href="#" role="button" class="secondary outline">缂栬緫</a>
+                            <form action="#" method="post" style="display: inline;" onsubmit="return confirm('纭畾瑕佸垹闄ゆ缁村害鍚楋紵');">
+                                <button type="submit" class="contrast outline">鍒犻櫎</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+        </figure>
+    </article>
+    <a th:href="@{/view/admin/cycles}">鈫?杩斿洖鍛ㄦ湡鍒楄〃</a>
+</section>
+</body>
+</html>
+----------
+.\src\main\resources\templates\admin\cycle\quality-report.html:
+<!-- src/main/resources/templates/admin/cycle/quality-report.html -->
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title>璐ㄩ噺鎶ュ憡 - [[${cycle.name()}]]</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <div th:replace="~{admin/cycle/_cycle-nav :: subnav(cycleId=${cycle.id()}, activeTab='report')}"></div>
+
+    <hgroup>
+        <h2>鍒嗛厤璐ㄩ噺鎶ュ憡: [[${cycle.name()}]]</h2>
+        <h3 th:text="${report.message()}">Results meet all validation criteria.</h3>
+    </hgroup>
+
+    <div th:if="${#lists.isEmpty(report.details())}">
+        <p>娌℃湁鍙敤鐨勮川閲忔姤鍛婅鎯呫€?/p>
+    </div>
+
+    <div class="grid" th:unless="${#lists.isEmpty(report.details())}">
+        <article th:each="detail : ${report.details()}">
+            <header th:text="${detail.dorm()}">绱崋鍏瘬-301</header>
+            <p>
+                <strong th:text="${detail.metric()}">绁炵粡璐ㄥ潎鍊?/strong>:
+                <span th:text="${#numbers.formatDecimal(detail.value(), 1, 2)}">0.55</span>
+            </p>
+            <progress th:value="${detail.isCompliant() ? 100 : 25}" max="100"></progress>
+            <footer>
+                <span th:text="${detail.isCompliant() ? '杈炬爣' : '寰呰瀵?}"
+                      th:class="${detail.isCompliant() ? 'success' : 'error'}">杈炬爣</span>
+            </footer>
+        </article>
+    </div>
+</section>
+</body>
+</html>
+----------
+.\src\main\resources\templates\admin\cycle\results-list.html:
+<!-- src/main/resources/templates/admin/cycle/results-list.html -->
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title>鍒嗛厤缁撴灉 - [[${cycle.name()}]]</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <div th:replace="~{admin/cycle/_cycle-nav :: subnav(cycleId=${cycle.id()}, activeTab='results')}"></div>
+
+    <hgroup>
+        <h2>鍒嗛厤缁撴灉: [[${cycle.name()}]]</h2>
+        <h3>鏌ョ湅姝ゅ懆鏈熺殑瀹屾暣瀹胯垗鍒嗛厤娓呭崟銆?/h3>
+    </hgroup>
+
+    <div th:if="${successMessage}" class="success" th:text="${successMessage}" style="margin-bottom: 1rem;"></div>
+
     <figure>
         <table role="grid">
             <thead>
             <tr>
-                <th scope="col">闂/鎻愮ず</th>
-                <th scope="col">Key</th>
-                <th scope="col">绫诲瀷</th>
-                <th scope="col">鏉冮噸</th>
-                <th scope="col" style="text-align: right;">鎿嶄綔</th>
+                <th scope="col">瀛︾敓濮撳悕</th>
+                <th scope="col">瀛﹀彿</th>
+                <th scope="col">瀛﹂櫌</th>
+                <th scope="col">鍒嗛厤瀹胯垗</th>
+                <th scope="col">搴婁綅</th>
             </tr>
             </thead>
             <tbody>
-            <tr th:if="${#lists.isEmpty(dimensions)}">
-                <td colspan="5">璇ュ懆鏈熸殏鏃犻棶鍗风淮搴︼紝璇峰厛鏂板銆?/td>
+            <tr th:if="${#lists.isEmpty(results)}">
+                <td colspan="5">姝ゅ懆鏈熸殏鏃犲垎閰嶇粨鏋溿€?/td>
             </tr>
-            <tr th:each="dim : ${dimensions}">
-                <td th:text="${dim.prompt()}"></td>
-                <td><code th:text="${dim.dimensionKey()}"></code></td>
-                <td th:text="${dim.dimensionType()}"></td>
-                <td th:text="${dim.weight()}"></td>
-                <td style="text-align: right;">
-                    <div role="group">
-                        <a href="#" role="button" class="secondary outline">缂栬緫</a>
-                        <form action="#" method="post" style="display: inline;" onsubmit="return confirm('纭畾瑕佸垹闄ゆ缁村害鍚楋紵');">
-                            <button type="submit" class="contrast outline">鍒犻櫎</button>
-                        </form>
-                    </div>
-                </td>
+            <tr th:each="result : ${results}">
+                <td th:text="${result.user().name()}">寮犱笁</td>
+                <td th:text="${result.user().studentId()}">20240001</td>
+                <td th:text="${result.user().college()}">璁＄畻鏈哄闄?/td>
+                <td th:text="${result.building()} + ' - ' + ${result.room()}">绱崋鍏瘬 - 101</td>
+                <td th:text="${result.bed()} + '鍙峰簥'">1</td>
             </tr>
             </tbody>
         </table>
     </figure>
-    <a th:href="@{/view/admin/cycles}">鈫?杩斿洖鍛ㄦ湡鍒楄〃</a>
 </section>
 </body>
 </html>
@@ -4067,21 +4316,25 @@ logging:
 <!DOCTYPE html>
 <html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
 <body>
-<nav th:fragment="subnav(cycleId, activeTab)" aria-label="breadcrumb">
+<nav th:fragment="subnav(cycleId, activeTab)" aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
     <ul>
         <li>
             <a th:href="@{/view/admin/cycles/{id}/dimensions(id=${cycleId})}"
                th:aria-current="${activeTab == 'dimensions' ? 'page' : null}">
-                闂嵎缁村害绠＄悊
+                闂嵎涓庡垎閰?
             </a>
         </li>
         <li>
-            <a href="#" th:aria-current="${activeTab == 'results' ? 'page' : null}">
+            <!-- [UPDATED] Link to results page -->
+            <a th:href="@{/view/admin/cycles/{id}/results(id=${cycleId})}"
+               th:aria-current="${activeTab == 'results' ? 'page' : null}">
                 鍒嗛厤缁撴灉
             </a>
         </li>
         <li>
-            <a href="#" th:aria-current="${activeTab == 'report' ? 'page' : null}">
+            <!-- [UPDATED] Link to report page -->
+            <a th:href="@{/view/admin/cycles/{id}/quality-report(id=${cycleId})}"
+               th:aria-current="${activeTab == 'report' ? 'page' : null}">
                 璐ㄩ噺鎶ュ憡
             </a>
         </li>
@@ -4429,6 +4682,7 @@ logging:
 </html>
 ----------
 .\src\main\resources\templates\student\dashboard.html:
+<!-- src/main/resources/templates/student/dashboard.html -->
 <!DOCTYPE html>
 <html lang="zh-CN"
       layout:decorate="~{layout}"
@@ -4445,27 +4699,22 @@ logging:
         <h3>娆㈣繋浣狅紝<span sec:authentication="name">Student</span>鍚屽锛?/h3>
     </hgroup>
 
-    <!-- Example of conditional content -->
-    <!--
-    <div th:if="${isSurveyOpen}">
-        <article>
-            <h4>鏂扮殑鍒嗛厤闂嵎宸插紑鏀撅紒</h4>
-            <p>璇峰湪鎴鏃ユ湡鍓嶅畬鎴愪釜浜哄亸濂介棶鍗风殑濉啓銆?/p>
-            <footer><a href="/view/student/survey" role="button">绔嬪嵆濉啓</a></footer>
-        </article>
-    </div>
-    -->
+    <!-- Display Flash Messages -->
+    <div th:if="${successMessage}" class="success" th:text="${successMessage}" style="padding: 1rem; border: 1px solid var(--pico-form-element-valid-border-color); border-radius: var(--pico-border-radius); margin-bottom: 1.5rem;"></div>
+    <div th:if="${errorMessage}" class="error" th:text="${errorMessage}" style="padding: 1rem; border: 1px solid var(--pico-form-element-invalid-border-color); border-radius: var(--pico-border-radius); margin-bottom: 1.5rem;"></div>
 
     <div class="grid">
         <article>
-            <h4><a href="#survey" class="contrast">濉啓鍋忓ソ闂嵎</a></h4>
+            <!-- [UPDATED] Link to the survey form -->
+            <h4><a th:href="@{/view/student/survey}" class="contrast">濉啓鍋忓ソ闂嵎</a></h4>
             <p>鍦ㄥ垎閰嶅懆鏈熷唴锛屽～鍐欏苟鎻愪氦浣犵殑涓汉鍋忓ソ銆?/p>
-            <footer><a href="#survey" role="button">鏌ョ湅闂嵎</a></footer>
+            <footer><a th:href="@{/view/student/survey}" role="button">寮€濮嬪～鍐?/a></footer>
         </article>
         <article>
-            <h4><a href="#result" class="contrast">鏌ョ湅鍒嗛厤缁撴灉</a></h4>
+            <!-- [UPDATED] Link to the result view -->
+            <h4><a th:href="@{/view/student/result}" class="contrast">鏌ョ湅鍒嗛厤缁撴灉</a></h4>
             <p>鍦ㄧ粨鏋滃叕甯冨悗锛屾煡鐪嬩綘鐨勫鑸嶅拰瀹ゅ弸淇℃伅銆?/p>
-            <footer><a href="#result" role="button" class="secondary">鏌ョ湅缁撴灉</a></footer>
+            <footer><a th:href="@{/view/student/result}" role="button" class="secondary">鏌ョ湅缁撴灉</a></footer>
         </article>
         <article>
             <h4><a href="#support" class="contrast">瀵绘眰甯姪</a></h4>
@@ -4478,11 +4727,115 @@ logging:
 </body>
 </html>
 ----------
+.\src\main\resources\templates\student\result-view.html:
+<!-- src/main/resources/templates/student/result-view.html -->
+<!DOCTYPE html>
+<html lang="zh-CN"
+      layout:decorate="~{layout}"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+    <title>鎴戠殑瀹胯垗鍒嗛厤缁撴灉</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <hgroup>
+        <h2>瀹胯垗鍒嗛厤缁撴灉</h2>
+        <h3 th:text="|浣犲ソ锛?{#authentication.name}鍚屽锛佽繖鏄綘鐨勬渶缁堝垎閰嶇粨鏋溿€倈"></h3>
+    </hgroup>
+
+    <div class="grid">
+        <!-- Your Assignment -->
+        <article>
+            <header>
+                <strong>浣犵殑瀹胯垗淇℃伅</strong>
+            </header>
+            <h2 style="font-size: 2.5rem; margin-bottom: 0.5rem;" th:text="${resultDto.assignment.building} + ' - ' + ${resultDto.assignment.room}">
+                绱崋鍏瘬 - 101
+            </h2>
+            <p>浣犵殑搴婁綅鏄? <strong th:text="${resultDto.assignment.bed} + '鍙峰簥'">1鍙峰簥</strong></p>
+        </article>
+
+        <!-- Your Roommates -->
+        <article>
+            <header>
+                <strong>浣犵殑瀹ゅ弸浠?/strong>
+            </header>
+            <div th:if="${#lists.isEmpty(resultDto.roommates)}">
+                <p>浣犳殏鏃惰繕娌℃湁瀹ゅ弸銆?/p>
+            </div>
+            <ul th:unless="${#lists.isEmpty(resultDto.roommates)}" style="list-style-type: none; padding: 0;">
+                <li th:each="roommate : ${resultDto.roommates}" style="margin-bottom: 0.75rem;">
+                    <strong th:text="${roommate.name}">鏉庡洓</strong> (<span th:text="'瀛﹀彿: ' + ${roommate.studentId}">瀛﹀彿: 20240002</span>)
+                </li>
+            </ul>
+        </article>
+    </div>
+
+    <a th:href="@{/view/student/dashboard}" role="button" class="secondary outline" style="margin-top: 1rem;">杩斿洖瀛︾敓涓婚潰鏉?/a>
+</section>
+</body>
+</html>
+----------
+.\src\main\resources\templates\student\survey-form.html:
+<!-- src/main/resources/templates/student/survey-form.html -->
+<!DOCTYPE html>
+<html lang="zh-CN"
+      layout:decorate="~{layout}"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>濉啓涓汉鍋忓ソ闂嵎</title>
+    <style>
+        .question-block { margin-bottom: 2rem; }
+        .options-group label { display: block; margin-bottom: 0.75rem; cursor: pointer; }
+    </style>
+</head>
+<body>
+<section layout:fragment="content">
+    <hgroup>
+        <h2>涓汉鍋忓ソ闂嵎</h2>
+        <h3 th:text="${surveyDto.dimensions.size() > 0 ? '璇疯鐪熷～鍐欎互涓嬮棶棰橈紝杩欏皢浣滀负瀹胯垗鍒嗛厤鐨勯噸瑕佷緷鎹€? : '褰撳墠娌℃湁闇€瑕佸～鍐欑殑闂嵎銆?}"></h3>
+    </hgroup>
+
+    <article th:if="${surveyDto.dimensions.size() > 0}">
+        <form th:action="@{/view/student/survey/submit}" th:object="${submissionDto}" method="post">
+
+            <!-- Loop through each dimension (question) -->
+            <div th:each="dim, iter : ${surveyDto.dimensions}" class="question-block">
+                <h5 th:text="${iter.count + '. ' + dim.prompt()}">1. 浣犵殑浣滄伅涔犳儻鏄紵</h5>
+
+                <!-- Radio buttons for SINGLE_CHOICE -->
+                <div th:if="${dim.responseType == 'SINGLE_CHOICE'}" class="options-group">
+                    <label th:each="opt : ${dim.options}">
+                        <input type="radio" th:name="|answers[${dim.id}]|" th:value="${opt.optionValue}" required>
+                        <span th:text="${opt.optionText}"></span>
+                    </label>
+                </div>
+
+                <!-- Range slider for SCALE -->
+                <div th:if="${dim.responseType == 'SCALE'}">
+                    <input type="range" th:name="|answers[${dim.id}]|" min="1" max="5" step="1" value="3" required>
+                </div>
+
+            </div>
+
+            <hr>
+            <button type="submit">鎻愪氦闂嵎</button>
+        </form>
+    </article>
+
+</section>
+</body>
+</html>
+----------
 .\src\test\java\com\smartdorm\backend\controller\AdminCycleViewControllerTest.java:
 // src/test/java/com/smartdorm/backend/controller/AdminCycleViewControllerTest.java
 package com.smartdorm.backend.controller;
 
+import com.smartdorm.backend.dto.AdminDtos;
 import com.smartdorm.backend.dto.CycleDtos;
+import com.smartdorm.backend.service.AdminAssignmentService;
 import com.smartdorm.backend.service.CycleManagementService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -4587,6 +4940,50 @@ public class AdminCycleViewControllerTest {
                 .andExpect(flash().attributeExists("successMessage"));
 
         verify(cycleService, times(1)).createDimensionForCycle(eq(cycleId), any(CycleDtos.SurveyDimensionCreateDto.class));
+    }
+
+    @MockBean
+    private AdminAssignmentService adminAssignmentService; // 娉ㄥ叆 mock
+
+    @Test
+    @DisplayName("[P5] POST /trigger-assignment - Should trigger assignment and redirect")
+    void whenTriggerAssignment_thenRedirectsToResults() throws Exception {
+        UUID cycleId = UUID.randomUUID();
+        doNothing().when(adminAssignmentService).triggerAssignment(cycleId);
+
+        mockMvc.perform(post("/view/admin/cycles/" + cycleId + "/trigger-assignment")
+                        .with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/view/admin/cycles/" + cycleId + "/results"))
+                .andExpect(flash().attributeExists("successMessage"));
+    }
+
+    @Test
+    @DisplayName("[P5] GET /results - Should display assignment results list")
+    void whenGetResults_thenReturnsResultsListView() throws Exception {
+        UUID cycleId = UUID.randomUUID();
+        when(cycleService.getCycleById(cycleId)).thenReturn(new CycleDtos.MatchingCycleDto(cycleId, "Test Cycle", null, null, "COMPLETED"));
+        when(adminAssignmentService.getAssignmentResults(cycleId)).thenReturn(Collections.emptyList());
+
+        mockMvc.perform(get("/view/admin/cycles/" + cycleId + "/results"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("admin/cycle/results-list"))
+                .andExpect(model().attributeExists("cycle", "results"));
+    }
+
+    @Test
+    @DisplayName("[P5] GET /quality-report - Should display quality report")
+    void whenGetQualityReport_thenReturnsReportView() throws Exception {
+        UUID cycleId = UUID.randomUUID();
+        AdminDtos.AdminAssignmentValidationDto mockReport = new AdminDtos.AdminAssignmentValidationDto(true, "OK", Collections.emptyList());
+
+        when(cycleService.getCycleById(cycleId)).thenReturn(new CycleDtos.MatchingCycleDto(cycleId, "Test Cycle", null, null, "COMPLETED"));
+        when(adminAssignmentService.validateResults(cycleId)).thenReturn(mockReport);
+
+        mockMvc.perform(get("/view/admin/cycles/" + cycleId + "/quality-report"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("admin/cycle/quality-report"))
+                .andExpect(model().attribute("report", mockReport));
     }
 }
 ----------
@@ -6668,6 +7065,101 @@ public class StudentFlowIntegrationTest {
         result2.setBed(bed2);
         result2.setMatchGroupId(groupId);
         resultRepository.save(result2);
+    }
+}
+----------
+.\src\test\java\com\smartdorm\backend\controller\StudentSurveyViewControllerTest.java:
+// src/test/java/com/smartdorm/backend/controller/StudentSurveyViewControllerTest.java
+package com.smartdorm.backend.controller;
+
+import com.smartdorm.backend.dto.StudentDtos;
+import com.smartdorm.backend.entity.User;
+import com.smartdorm.backend.repository.UserRepository;
+import com.smartdorm.backend.service.StudentService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.web.servlet.MockMvc;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+@SpringBootTest
+@AutoConfigureMockMvc
+@DisplayName("TDD for StudentSurveyViewController")
+@WithMockUser(username = "student", roles = "STUDENT") // 妯℃嫙宸茬櫥褰曠殑瀛︾敓鐢ㄦ埛
+public class StudentSurveyViewControllerTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @MockBean
+    private StudentService studentService;
+
+    @MockBean
+    private UserRepository userRepository;
+
+    @BeforeEach
+    void setUp() {
+        // Mock the user repository to return a user for the authenticated principal
+        User mockUser = new User();
+        mockUser.setStudentId("student");
+        when(userRepository.findByStudentId("student")).thenReturn(Optional.of(mockUser));
+    }
+
+    @Test
+    @DisplayName("GET /view/student/survey - Should display survey form")
+    void whenGetSurvey_thenReturnsSurveyFormView() throws Exception {
+        // Mock service layer
+        StudentDtos.SurveyForStudentDto surveyDto = new StudentDtos.SurveyForStudentDto(UUID.randomUUID(), Collections.emptyList());
+        when(studentService.getSurveyForStudent()).thenReturn(surveyDto);
+
+        mockMvc.perform(get("/view/student/survey"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("student/survey-form"))
+                .andExpect(model().attributeExists("surveyDto"))
+                .andExpect(model().attributeExists("submissionDto"));
+    }
+
+    @Test
+    @DisplayName("POST /view/student/survey/submit - Should process form and redirect to dashboard")
+    void whenPostSurvey_thenRedirectsToDashboard() throws Exception {
+        mockMvc.perform(post("/view/student/survey/submit")
+                        .param("answers['" + UUID.randomUUID() + "']", "1.0") // 妯℃嫙琛ㄥ崟鎻愪氦
+                        .with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/view/student/dashboard"))
+                .andExpect(flash().attributeExists("successMessage"));
+    }
+
+    @Test
+    @DisplayName("GET /view/student/result - Should display assignment result")
+    void whenGetResult_thenReturnsResultView() throws Exception {
+        // Mock service layer
+        StudentDtos.AssignmentDetails details = new StudentDtos.AssignmentDetails("绱崋鍏瘬", "101", 1);
+        List<StudentDtos.RoommateDto> roommates = List.of(new StudentDtos.RoommateDto("鏉庡洓", "20240002"));
+        StudentDtos.AssignmentResultStudentDto resultDto = new StudentDtos.AssignmentResultStudentDto(details, roommates);
+
+        when(studentService.getStudentResult(any(User.class))).thenReturn(resultDto);
+
+        mockMvc.perform(get("/view/student/result"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("student/result-view"))
+                .andExpect(model().attributeExists("resultDto"));
     }
 }
 ----------

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title th:text="${article.title()}">文章详情</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <article>
+        <header>
+            <hgroup>
+                <h2 th:text="${article.title()}">文章标题</h2>
+                <h3>
+                    <span th:text="${article.category()}">分类</span> ·
+                    <small th:text="'作者: ' + ${article.authorName()}"></small> ·
+                    <small th:text="'发布于: ' + ${#temporals.format(article.createdAt(), 'yyyy-MM-dd HH:mm')}"></small>
+                </h3>
+            </hgroup>
+        </header>
+
+        <!-- Assuming content is plain text. If using Markdown, a JS library would be needed. -->
+        <p style="white-space: pre-wrap;" th:text="${article.content()}">
+            文章正文...
+        </p>
+
+        <footer>
+            <a th:href="@{/view/student/support/articles}" role="button" class="secondary outline">返回文章列表</a>
+        </footer>
+    </article>
+</section>
+</body>
+</html>

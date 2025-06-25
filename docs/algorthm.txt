@@ -1,0 +1,196 @@
+指导语：
+请根据真实情况选择（1~5分），答案无对错，仅用于优化宿舍分配。数据严格保密。
+1.	你的性别是？
+1.	男  2. 女
+2.	你的学院是？
+1.	文学院  2.数学科学学院  .3. 物理学院 4.计算机科学与技术学院 5，等等等   
+3.  你喜欢的宿舍氛围是？
+   1. 安静  2. 热闹
+5.  你的起床时间一般是？
+1.7点以前  2.7点到8点 3.8点到9点 4.9点以后
+6.  你的入睡时间一般是？
+   1. 22点前  2.22点到23点 3.23点到0点 4. 0点后
+7.  你认为打扫宿舍适宜的频率是？
+   1. 每天打扫  2. 每周2到3次  3. 每周1次 4.几乎不打扫
+请根据真实情况填写，每题1=强烈不同意，5=强烈同意。
+// 1. 神经质（情绪稳定性）
+1.  我经常感到紧张或焦虑。
+2. 我容易因为小事心烦意乱。
+3. 我的情绪波动很大。
+4. 我很少感到沮丧。（反向计分）
+// 2. 外向性（社交活跃度）
+5. 我喜欢与人交谈并成为焦点。
+6. 在聚会中我总是主动认识新朋友。
+7. 独处时我会感到无聊。（反向计分）
+8. 我通常领导团队活动。
+// 3. 开放性（思维开放性）
+9. 我对艺术和诗歌很感兴趣。
+10. 我喜欢尝试新奇的食物或活动。
+11. 我对抽象理论讨论感到无聊。（反向计分）
+12. 我经常提出创意点子。
+// 4. 宜人性（合作性）
+13. 我通常会原谅别人的过错。
+14. 我乐意帮助陌生人。
+15. 我倾向于相信他人是善意的。
+16. 与人争论时我会主动退让。
+// 5. 谨慎性（自律性）
+17. 我会提前规划好每天的任务。
+18. 我的书桌和衣柜总是整洁的。
+19. 我经常拖延作业。（反向计分）
+20. 我严格遵守作息时间。
+
+计算学生的五个人格得分（1-5），其中4，7，11，19反向计分（6 - i）最后再除20，归一化处理。
+首先依据性别严格分类，再依据学院分类，（如果有剩余的话，再把剩余的按照算法继续分），最后依据3宿舍氛围进行分类，接着，将每个学生表示为8维向量
+student_vector = [
+neuroticism,      # 神经质
+extraversion,     # 外向性
+    openness,         # 开放性
+    agreeableness,    # 宜人性
+    conscientiousness,# 谨慎性
+    (wake_time-1)/3,      # 起床时间     5. 选项分别是0，1，2，3
+    (sleep_time-1)/3,     # 入睡时间      6.
+    (clean_freq-1)/3      # 打扫频率      7.
+]
+weights = [0.3, 0.2, 0.2, 0.3, 0.2, 0.4, 0.4, 0.3]     //对神经质，作息时间施加更高权重
+weighted_vector = [v*w for v,w in zip(student_vector, weights)]
+
+
+k-modes聚类算法和贪心算法进行宿舍分配的流程如下： 
+1) 计算每个学生各属性值的属性值。
+3) 计算学生与学生间的相异度距离，
+score = 0.3 * abs(neuroA - neuroB))   # 神经质差异
++ 0.3*（1-min(agreeA, agreeB)）         # 宜人性
++0.2* abs(opA-opB)
++0.2*abs(conA-conB)
++ 0.4 * abs(wakeA - wakeB)
++ 0.4 * abs(sleepA - sleepB)
++ 0.3 * abs(cleanA - cleanB)
+使sorce在局部范围内最小
+4)实时检测，如果出现了一个宿舍有2个及以上的人，具有高神经质+低宜人（神经质>0.7并且宜人性<0.4），重新调整 
+
+5) 保证单个宿舍的人数不超过给定的人数即可
+
+6）检验标准
+所有宿舍的神经质均值 < 65
+所有宿舍的宜人性均值 > 50
+
+
+以下是deepseek给出代码，经过探讨发现，在这种情况下，即权重不同，寻求学生与学生的比较下，更加适宜用匈牙利算法或遗传算法。
+二、算法选择与实现
+1. 基于匈牙利算法的精确求解
+适用于小规模问题（N<200）：
+from scipy.optimize import linear_sum_assignment
+
+def hungarian_allocation(student_data):
+    n = len(student_data)
+    # 构建成本矩阵（所有可能配对的分数）
+    cost_matrix = np.zeros((n, n))
+    for i in range(n):
+        for j in range(n):
+            cost_matrix[i,j] = calculate_score(student_data[i], student_data[j])
+    
+    # 找到最优分配（每人一个宿舍位置，实际需调整）
+    row_ind, col_ind = linear_sum_assignment(cost_matrix)
+    
+    # 转换为宿舍分组（假设4人/宿舍）
+    clusters = np.zeros(n, dtype=int)
+    for dorm_id in range(n // 4):
+        clusters[row_ind[dorm_id*4 : (dorm_id+1)*4]] = dorm_id
+    
+    return clusters
+
+def calculate_score(A, B):
+    # 所有输入特征已归一化到[0,1]
+    return (
+        0.3 * abs(A['neuro'] - B['neuro']) +
+        0.3 * (1 - min(A['agree'], B['agree'])) +
+        0.2 * abs(A['open'] - B['open']) +
+        0.2 * abs(A['con'] - B['con']) +
+        0.4 * abs(A['wake'] - B['wake']) +
+        0.4 * abs(A['sleep'] - B['sleep']) +
+        0.3 * abs(A['clean'] - B['clean'])
+    )
+2. 遗传算法（大规模问题）
+from pymoo.algorithms.soo.nonconvex.ga import GA
+from pymoo.problems.single import ObjectiveProblem
+
+class DormProblem(ObjectiveProblem):
+    def __init__(self, student_data, dorm_size=4):
+        self.student_data = student_data
+        self.dorm_size = dorm_size
+        n_students = len(student_data)
+        super().__init__(
+            n_var=n_students,
+            n_obj=1,
+            xl=np.zeros(n_students),
+            xu=np.full(n_students, n_students//dorm_size - 1),
+            vtype=int
+        )
+    
+    def _evaluate(self, X, out):
+        scores = []
+        for sol in X:
+            clusters = sol.astype(int)
+            total_score = 0
+            for dorm_id in np.unique(clusters):
+                members = np.where(clusters == dorm_id)[0]
+                # 计算宿舍内所有配对分数
+                for i in range(len(members)):
+                    for j in range(i+1, len(members)):
+                        total_score += calculate_score(
+                            self.student_data[members[i]], 
+                            self.student_data[members[j]])
+            scores.append(total_score)
+        out["F"] = np.array(scores)
+
+# 使用遗传算法优化
+algorithm = GA(pop_size=100)
+res = minimize(DormProblem(student_data), algorithm, ('n_gen', 50))
+三、动态调整策略
+1. 高风险组合实时检测
+def needs_adjustment(dorm, threshold=0.7):
+    """检测是否需要调整"""
+    neuro_diff = np.mean([abs(dorm[i]['neuro'] - dorm[j]['neuro']) 
+                 for i in range(len(dorm)) for j in range(i+1, len(dorm))])
+    agree_min = np.min([s['agree'] for s in dorm])
+    return (0.3*neuro_diff + 0.3*(1-agree_min)) > threshold
+2. 局部搜索优化
+def local_search(clusters, student_data, max_iter=100):
+    for _ in range(max_iter):
+        improved = False
+        for dorm_id in np.unique(clusters):
+            members = np.where(clusters == dorm_id)[0]
+            if needs_adjustment([student_data[i] for i in members]):
+                # 尝试与相邻宿舍交换
+                for other_id in np.unique(clusters):
+                    if other_id == dorm_id: continue
+                    other_members = np.where(clusters == other_id)[0]
+                    # 评估所有可能交换对
+                    for i in members:
+                        for j in other_members:
+                            new_score = calculate_swap_score(clusters, student_data, i, j)
+                            if new_score < current_score:
+                                clusters[i], clusters[j] = other_id, dorm_id
+                                improved = True
+                                break
+        if not improved:
+            break
+    return clusters
+________________________________________
+四、数学优化加速技巧
+1. 对称性利用
+Score(A,B)=Score(B,A)⇒成本矩阵对称Score(A,B)=Score(B,A)⇒成本矩阵对称
+仅需计算上三角部分，减少50%计算量。
+2. 预筛选候选对
+•	剔除明显不兼容的对（如作息差>3小时）
+def prefilter_pairs(A, B):
+    return abs(A['wake'] - B['wake']) > 0.75 or abs(A['sleep'] - B['sleep']) > 0.75
+3. 并行计算
+from joblib import Parallel, delayed
+
+def parallel_score_calculation(student_data):
+    n = len(student_data)
+    return Parallel(n_jobs=-1)(
+        delayed(calculate_score)(student_data[i], student_data[j])
+        for i in range(n) for j in range(i+1, n))
+

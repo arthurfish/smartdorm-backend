@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title>调宿申请管理</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <div th:replace="~{admin/support/_support-nav :: subnav(activeTab='swap')}"></div>
+
+    <hgroup>
+        <h2>调宿申请管理</h2>
+        <h3>在此审批或驳回学生提交的调宿申请。</h3>
+    </hgroup>
+
+    <div th:if="${successMessage}" class="success" th:text="${successMessage}" style="margin-bottom: 1rem;"></div>
+    <div th:if="${errorMessage}" class="error" th:text="${errorMessage}" style="margin-bottom: 1rem;"></div>
+
+    <figure>
+        <table role="grid">
+            <thead>
+            <tr>
+                <th scope="col">学生</th>
+                <th scope="col">申请理由</th>
+                <th scope="col">状态</th>
+                <th scope="col">申请时间</th>
+                <th scope="col">处理意见</th>
+                <th scope="col" style="text-align: right;">操作</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:if="${#lists.isEmpty(requests)}">
+                <td colspan="6">暂无待处理的调宿申请。</td>
+            </tr>
+            <tr th:each="req : ${requests}">
+                <td th:text="${req.userName()}"></td>
+                <td th:text="${#strings.abbreviate(req.reason(), 50)}"></td>
+                <td>
+                    <span th:text="${req.status()}"
+                          th:classappend="${req.status() == 'APPROVED'} ? 'success' : (${req.status() == 'REJECTED'} ? 'error' : '')"></span>
+                </td>
+                <td th:text="${#temporals.format(req.createdAt(), 'yyyy-MM-dd HH:mm')}"></td>
+                <td th:text="${req.adminComment()}"></td>
+                <td style="text-align: right;">
+                    <form th:action="@{/view/admin/support/swap-requests/{id}/process(id=${req.id()})}" method="post" th:if="${req.status() == 'PENDING'}">
+                        <div role="group">
+                            <input type="text" name="adminComment" placeholder="处理意见(可选)">
+                            <button type="submit" name="status" value="APPROVED" class="secondary" style="padding: 0.5rem;">批准</button>
+                            <button type="submit" name="status" value="REJECTED" class="contrast" style="padding: 0.5rem;">驳回</button>
+                        </div>
+                    </form>
+                    <span th:if="${req.status() != 'PENDING'}">已处理</span>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </figure>
+</section>
+</body>
+</html>

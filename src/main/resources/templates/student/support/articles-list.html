@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title>浏览支持内容</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <hgroup>
+        <h2>浏览支持内容</h2>
+        <h3>在这里查看心理健康建议、宿舍文化活动等文章。</h3>
+    </hgroup>
+
+    <div th:if="${#lists.isEmpty(articles)}">
+        <p>暂无任何文章内容。</p>
+    </div>
+
+    <div class="grid" th:unless="${#lists.isEmpty(articles)}">
+        <article th:each="article : ${articles}">
+            <hgroup>
+                <h4 th:text="${article.title()}">文章标题</h4>
+                <h5><span th:text="${article.category()}">分类</span> · <small th:text="${#temporals.format(article.createdAt(), 'yyyy-MM-dd')}"></small></h5>
+            </hgroup>
+            <p th:text="${#strings.abbreviate(article.content(), 120)}">文章摘要...</p>
+            <footer>
+                <a th:href="@{/view/student/support/articles/{id}(id=${article.id()})}" role="button" class="outline">阅读全文</a>
+            </footer>
+        </article>
+    </div>
+</section>
+</body>
+</html>
