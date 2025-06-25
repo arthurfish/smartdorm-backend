@@ -3,6 +3,7 @@ package com.smartdorm.backend.controller;
 
 import com.smartdorm.backend.dto.CycleDtos;
 import com.smartdorm.backend.exception.ResourceNotFoundException;
+import com.smartdorm.backend.service.AdminAssignmentService;
 import com.smartdorm.backend.service.CycleManagementService;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -26,8 +27,13 @@ public class AdminCycleViewController {
 
     private final CycleManagementService cycleService;
 
-    public AdminCycleViewController(CycleManagementService cycleService) {
+    // 注入新的 Service
+    private final AdminAssignmentService adminAssignmentService;
+
+    // 更新构造函数
+    public AdminCycleViewController(CycleManagementService cycleService, AdminAssignmentService adminAssignmentService) {
         this.cycleService = cycleService;
+        this.adminAssignmentService = adminAssignmentService;
     }
 
     @GetMapping
@@ -145,5 +151,43 @@ public class AdminCycleViewController {
         // 5. 操作成功
         redirectAttributes.addFlashAttribute("successMessage", "问卷维度 '" + dto.getPrompt() + "' 创建成功！");
         return "redirect:/view/admin/cycles/" + cycleId + "/dimensions";
+    }
+
+    /**
+     * [Phase 5] 触发一键分配
+     * 对应 use case: ADM-03
+     */
+    @PostMapping("/{cycleId}/trigger-assignment")
+    public String triggerAssignment(@PathVariable UUID cycleId, RedirectAttributes redirectAttributes) {
+        try {
+            adminAssignmentService.triggerAssignment(cycleId);
+            redirectAttributes.addFlashAttribute("successMessage", "分配流程已成功启动并完成！");
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("errorMessage", "分配失败: " + e.getMessage());
+        }
+        // 分配完成后，重定向到结果页面
+        return "redirect:/view/admin/cycles/" + cycleId + "/results";
+    }
+
+    /**
+     * [Phase 5] 显示分配结果列表
+     * 对应 use case: ADM-04
+     */
+    @GetMapping("/{cycleId}/results")
+    public String showResultsList(@PathVariable UUID cycleId, Model model) {
+        model.addAttribute("cycle", cycleService.getCycleById(cycleId));
+        model.addAttribute("results", adminAssignmentService.getAssignmentResults(cycleId));
+        return "admin/cycle/results-list";
+    }
+
+    /**
+     * [Phase 5] 显示分配质量报告
+     * 对应 use case: ADM-08
+     */
+    @GetMapping("/{cycleId}/quality-report")
+    public String showQualityReport(@PathVariable UUID cycleId, Model model) {
+        model.addAttribute("cycle", cycleService.getCycleById(cycleId));
+        model.addAttribute("report", adminAssignmentService.validateResults(cycleId));
+        return "admin/cycle/quality-report";
     }
 }

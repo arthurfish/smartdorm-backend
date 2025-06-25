@@ -1,0 +1,50 @@
+<!-- src/main/resources/templates/student/survey-form.html -->
+<!DOCTYPE html>
+<html lang="zh-CN"
+      layout:decorate="~{layout}"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>填写个人偏好问卷</title>
+    <style>
+        .question-block { margin-bottom: 2rem; }
+        .options-group label { display: block; margin-bottom: 0.75rem; cursor: pointer; }
+    </style>
+</head>
+<body>
+<section layout:fragment="content">
+    <hgroup>
+        <h2>个人偏好问卷</h2>
+        <h3 th:text="${surveyDto.dimensions.size() > 0 ? '请认真填写以下问题，这将作为宿舍分配的重要依据。' : '当前没有需要填写的问卷。'}"></h3>
+    </hgroup>
+
+    <article th:if="${surveyDto.dimensions.size() > 0}">
+        <form th:action="@{/view/student/survey/submit}" th:object="${submissionDto}" method="post">
+
+            <!-- Loop through each dimension (question) -->
+            <div th:each="dim, iter : ${surveyDto.dimensions}" class="question-block">
+                <h5 th:text="${iter.count + '. ' + dim.prompt()}">1. 你的作息习惯是？</h5>
+
+                <!-- Radio buttons for SINGLE_CHOICE -->
+                <div th:if="${dim.responseType == 'SINGLE_CHOICE'}" class="options-group">
+                    <label th:each="opt : ${dim.options}">
+                        <input type="radio" th:name="|answers[${dim.id}]|" th:value="${opt.optionValue}" required>
+                        <span th:text="${opt.optionText}"></span>
+                    </label>
+                </div>
+
+                <!-- Range slider for SCALE -->
+                <div th:if="${dim.responseType == 'SCALE'}">
+                    <input type="range" th:name="|answers[${dim.id}]|" min="1" max="5" step="1" value="3" required>
+                </div>
+
+            </div>
+
+            <hr>
+            <button type="submit">提交问卷</button>
+        </form>
+    </article>
+
+</section>
+</body>
+</html>

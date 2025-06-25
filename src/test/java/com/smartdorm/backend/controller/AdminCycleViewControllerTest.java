@@ -1,7 +1,9 @@
 // src/test/java/com/smartdorm/backend/controller/AdminCycleViewControllerTest.java
 package com.smartdorm.backend.controller;
 
+import com.smartdorm.backend.dto.AdminDtos;
 import com.smartdorm.backend.dto.CycleDtos;
+import com.smartdorm.backend.service.AdminAssignmentService;
 import com.smartdorm.backend.service.CycleManagementService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -106,5 +108,49 @@ public class AdminCycleViewControllerTest {
                 .andExpect(flash().attributeExists("successMessage"));
 
         verify(cycleService, times(1)).createDimensionForCycle(eq(cycleId), any(CycleDtos.SurveyDimensionCreateDto.class));
+    }
+
+    @MockBean
+    private AdminAssignmentService adminAssignmentService; // 注入 mock
+
+    @Test
+    @DisplayName("[P5] POST /trigger-assignment - Should trigger assignment and redirect")
+    void whenTriggerAssignment_thenRedirectsToResults() throws Exception {
+        UUID cycleId = UUID.randomUUID();
+        doNothing().when(adminAssignmentService).triggerAssignment(cycleId);
+
+        mockMvc.perform(post("/view/admin/cycles/" + cycleId + "/trigger-assignment")
+                        .with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/view/admin/cycles/" + cycleId + "/results"))
+                .andExpect(flash().attributeExists("successMessage"));
+    }
+
+    @Test
+    @DisplayName("[P5] GET /results - Should display assignment results list")
+    void whenGetResults_thenReturnsResultsListView() throws Exception {
+        UUID cycleId = UUID.randomUUID();
+        when(cycleService.getCycleById(cycleId)).thenReturn(new CycleDtos.MatchingCycleDto(cycleId, "Test Cycle", null, null, "COMPLETED"));
+        when(adminAssignmentService.getAssignmentResults(cycleId)).thenReturn(Collections.emptyList());
+
+        mockMvc.perform(get("/view/admin/cycles/" + cycleId + "/results"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("admin/cycle/results-list"))
+                .andExpect(model().attributeExists("cycle", "results"));
+    }
+
+    @Test
+    @DisplayName("[P5] GET /quality-report - Should display quality report")
+    void whenGetQualityReport_thenReturnsReportView() throws Exception {
+        UUID cycleId = UUID.randomUUID();
+        AdminDtos.AdminAssignmentValidationDto mockReport = new AdminDtos.AdminAssignmentValidationDto(true, "OK", Collections.emptyList());
+
+        when(cycleService.getCycleById(cycleId)).thenReturn(new CycleDtos.MatchingCycleDto(cycleId, "Test Cycle", null, null, "COMPLETED"));
+        when(adminAssignmentService.validateResults(cycleId)).thenReturn(mockReport);
+
+        mockMvc.perform(get("/view/admin/cycles/" + cycleId + "/quality-report"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("admin/cycle/quality-report"))
+                .andExpect(model().attribute("report", mockReport));
     }
 }

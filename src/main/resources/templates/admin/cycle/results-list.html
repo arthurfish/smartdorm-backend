@@ -1,0 +1,45 @@
+<!-- src/main/resources/templates/admin/cycle/results-list.html -->
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title>分配结果 - [[${cycle.name()}]]</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <div th:replace="~{admin/cycle/_cycle-nav :: subnav(cycleId=${cycle.id()}, activeTab='results')}"></div>
+
+    <hgroup>
+        <h2>分配结果: [[${cycle.name()}]]</h2>
+        <h3>查看此周期的完整宿舍分配清单。</h3>
+    </hgroup>
+
+    <div th:if="${successMessage}" class="success" th:text="${successMessage}" style="margin-bottom: 1rem;"></div>
+
+    <figure>
+        <table role="grid">
+            <thead>
+            <tr>
+                <th scope="col">学生姓名</th>
+                <th scope="col">学号</th>
+                <th scope="col">学院</th>
+                <th scope="col">分配宿舍</th>
+                <th scope="col">床位</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:if="${#lists.isEmpty(results)}">
+                <td colspan="5">此周期暂无分配结果。</td>
+            </tr>
+            <tr th:each="result : ${results}">
+                <td th:text="${result.user().name()}">张三</td>
+                <td th:text="${result.user().studentId()}">20240001</td>
+                <td th:text="${result.user().college()}">计算机学院</td>
+                <td th:text="${result.building()} + ' - ' + ${result.room()}">紫荆公寓 - 101</td>
+                <td th:text="${result.bed()} + '号床'">1</td>
+            </tr>
+            </tbody>
+        </table>
+    </figure>
+</section>
+</body>
+</html>

@@ -729,33 +729,34 @@ public class AdminCycleViewController {
         return "admin/cycle/dimension-form";
     }
 
-    // [鏈€缁堜慨姝ｇ増]
     @PostMapping("/{cycleId}/dimensions/create")
     public String createDimension(@PathVariable UUID cycleId,
                                   @Valid @ModelAttribute("dimensionDto") CycleDtos.SurveyDimensionCreateDto dto,
                                   BindingResult result, RedirectAttributes redirectAttributes) {
 
-        // 1. 杩囨护鎺夌敤鎴锋湭濉啓鐨勭┖閫夐」琛?
+        // 1. 杩囨护鎺夌敤鎴锋湭濉啓鎴栨湭瀹屾暣濉啓鐨勭┖閫夐」琛屻€?
+        // [淇] 浣跨敤 .getOptionText() 鍜?.getOptionValue()
         List<CycleDtos.OptionCreateDto> filteredOptions = dto.getOptions().stream()
-                .filter(option -> StringUtils.hasText(option.optionText()) && Objects.nonNull(option.optionValue()))
+                .filter(option -> StringUtils.hasText(option.getOptionText()) && Objects.nonNull(option.getOptionValue()))
                 .collect(Collectors.toList());
 
-        // 2. 妫€鏌ヨ繃婊ゅ悗鐨勯€夐」鏄惁涓虹┖
+        // 2.銆愬叧閿獙璇併€戞鏌ヨ繃婊ゅ悗鐨勬湁鏁堥€夐」鏄惁涓虹┖銆?
         if (filteredOptions.isEmpty()) {
             result.rejectValue("options", "options.notempty", "蹇呴』鑷冲皯鎻愪緵涓€涓湁鏁堢殑閫夐」锛堟弿杩板拰鍒嗗€奸兘闇€濉啓锛夈€?);
         }
 
-        // 3. 濡傛灉鏈変换浣曢獙璇侀敊璇紙鏉ヨ嚜@Valid娉ㄨВ鐨勶紝鎴栨垜浠墜鍔ㄦ坊鍔犵殑锛夛紝鍒欓噸瀹氬悜
+        // 3. 妫€鏌ユ槸鍚﹀瓨鍦ㄤ换浣曢獙璇侀敊璇?
         if (result.hasErrors()) {
             redirectAttributes.addFlashAttribute("org.springframework.validation.BindingResult.dimensionDto", result);
-            redirectAttributes.addFlashAttribute("dimensionDto", dto); // 灏嗙敤鎴峰師濮嬭緭鍏ヤ紶鍥?
+            redirectAttributes.addFlashAttribute("dimensionDto", dto);
             return "redirect:/view/admin/cycles/" + cycleId + "/dimensions/new";
         }
 
-        // 4. 鐢ㄨ繃婊ゅ悗鐨勫共鍑€閫夐」鍒楄〃鏇存柊DTO锛岀劧鍚庝紶閫掔粰鏈嶅姟灞?
+        // 4. 銆愭牳蹇冩楠ゃ€戠敤杩囨护鍚庣殑骞插噣閫夐」鍒楄〃鏇存柊DTO
         dto.setOptions(filteredOptions);
         cycleService.createDimensionForCycle(cycleId, dto);
 
+        // 5. 鎿嶄綔鎴愬姛
         redirectAttributes.addFlashAttribute("successMessage", "闂嵎缁村害 '" + dto.getPrompt() + "' 鍒涘缓鎴愬姛锛?);
         return "redirect:/view/admin/cycles/" + cycleId + "/dimensions";
     }
@@ -1570,6 +1571,7 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.PositiveOrZero;
+import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -1612,10 +1614,13 @@ public class CycleDtos {
             @Pattern(regexp = "DRAFT|OPEN|COMPLETED", message = "Status must be DRAFT, OPEN, or COMPLETED") String status
     ) {}
 
-    public record OptionCreateDto(
-            String optionText, // [淇敼] 绉婚櫎 @NotEmpty锛岀敱Controller鎵嬪姩楠岃瘉
-            Double optionValue   // [淇敼] 绉婚櫎 @NotNull锛岀敱Controller鎵嬪姩楠岃瘉
-    ) {}
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor // 涓烘柟渚挎祴璇曠敤渚嬶紝涔熸坊鍔犱竴涓叏鍙傛瀯閫犲嚱鏁?
+    public static class OptionCreateDto {
+        private String optionText;
+        private Double optionValue;
+    }
 
     // [鍏抽敭閲嶆瀯] 灏?SurveyDimensionCreateDto 浠?record 鏀逛负 class
     @Data
@@ -1643,6 +1648,7 @@ public class CycleDtos {
 
         @Valid
         private List<OptionCreateDto> options = new ArrayList<>();
+
     }
 
     public record SurveyDimensionUpdateDto(
@@ -3105,15 +3111,14 @@ public class CycleManagementService {
         dimension.setResponseType(dto.getResponseType());
         dimension.setWeight(dto.getWeight());
         dimension.setParentDimensionKey(dto.getParentDimensionKey());
-        // [鍏抽敭淇] 浣跨敤 isReverseScored() getter
         dimension.setReverseScored(dto.isReverseScored());
 
-        // 鐜板湪杩欓噷鐨刣to.getOptions()鏄粡杩嘋ontroller娓呯悊鍚庣殑骞插噣鍒楄〃锛屼笉浼氭湁null鍊?
         if (dto.getOptions() != null) {
             List<DimensionOption> options = dto.getOptions().stream().map(optDto -> {
                 DimensionOption option = new DimensionOption();
-                option.setOptionText(optDto.optionText());
-                option.setOptionValue(optDto.optionValue()); // 杩欓噷涓嶄細鍐嶆湁NullPointerException
+                // [淇] 浣跨敤 .getOptionText() 鍜?.getOptionValue()
+                option.setOptionText(optDto.getOptionText());
+                option.setOptionValue(optDto.getOptionValue());
                 option.setDimension(dimension);
                 return option;
             }).collect(Collectors.toList());
@@ -3122,6 +3127,7 @@ public class CycleManagementService {
 
         return cycleMapper.toDto(dimensionRepository.save(dimension));
     }
+
 
 
     public List<SurveyDimensionDto> getDimensionsForCycle(UUID cycleId) {
@@ -4559,12 +4565,18 @@ public class AdminCycleViewControllerTest {
     @Test
     @DisplayName("POST /view/admin/cycles/{id}/dimensions/create - Should create dimension and redirect")
     void whenCreateDimension_thenRedirectsToDimensionsList() throws Exception {
+// [淇] 浣跨敤榛樿鏋勯€犲嚱鏁板拰 setter 鏂规硶鏉ユ瀯寤?DTO 瀵硅薄
         UUID cycleId = UUID.randomUUID();
-        CycleDtos.SurveyDimensionCreateDto createDto = new CycleDtos.SurveyDimensionCreateDto(
-                "rest_habit", "Your rest habit?", "SOFT_FACTOR", "SINGLE_CHOICE",
-                1.0, null, false, List.of(new CycleDtos.OptionCreateDto("Early Bird", 1.0))
-        );
 
+        CycleDtos.SurveyDimensionCreateDto createDto = new CycleDtos.SurveyDimensionCreateDto();
+        createDto.setDimensionKey("rest_habit");
+        createDto.setPrompt("Your rest habit?");
+        createDto.setDimensionType("SOFT_FACTOR");
+        createDto.setResponseType("SINGLE_CHOICE");
+        createDto.setWeight(1.0);
+        createDto.setParentDimensionKey(null); // 涔熷彲浠ョ渷鐣ヨ繖琛岋紝鍥犱负瀵硅薄灞炴€ч粯璁や负 null
+        createDto.setReverseScored(false);
+        createDto.setOptions(List.of(new CycleDtos.OptionCreateDto("Early Bird", 1.0)));
         when(cycleService.createDimensionForCycle(eq(cycleId), any())).thenReturn(mock(CycleDtos.SurveyDimensionDto.class));
 
         mockMvc.perform(post("/view/admin/cycles/" + cycleId + "/dimensions/create")
@@ -4899,13 +4911,13 @@ class AuthControllerIntegrationTest {
 }
 ----------
 .\src\test\java\com\smartdorm\backend\controller\CycleControllerIntegrationTest.java:
+// src/test/java/com/smartdorm/backend/controller/CycleControllerIntegrationTest.java
 package com.smartdorm.backend.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartdorm.backend.dto.CycleDtos.*;
 import com.smartdorm.backend.dto.LoginRequest;
 import com.smartdorm.backend.dto.LoginResponse;
-import com.smartdorm.backend.entity.MatchingCycle;
 import com.smartdorm.backend.entity.User;
 import com.smartdorm.backend.repository.MatchingCycleRepository;
 import com.smartdorm.backend.repository.UserRepository;
@@ -5006,13 +5018,21 @@ class CycleControllerIntegrationTest {
         UUID cycleId = createdCycle.id();
 
         // 2. Add a dimension with options to the cycle
+        // [鍏抽敭淇] 浣跨敤 setter 鏂规硶鏉ユ瀯寤?SurveyDimensionCreateDto 瀵硅薄
         List<OptionCreateDto> options = List.of(
                 new OptionCreateDto("鏃╃潯鏃╄捣", 1.0),
                 new OptionCreateDto("鏅氱潯鏅氳捣", 5.0)
         );
-        SurveyDimensionCreateDto dimensionDto = new SurveyDimensionCreateDto(
-                "rest_habit", "浣犵殑浣滄伅涔犳儻鏄紵", "SOFT_FACTOR", "SINGLE_CHOICE", 2.0, null, false, options);
+        SurveyDimensionCreateDto dimensionDto = new SurveyDimensionCreateDto();
+        dimensionDto.setDimensionKey("rest_habit");
+        dimensionDto.setPrompt("浣犵殑浣滄伅涔犳儻鏄紵");
+        dimensionDto.setDimensionType("SOFT_FACTOR");
+        dimensionDto.setResponseType("SINGLE_CHOICE");
+        dimensionDto.setWeight(2.0);
+        dimensionDto.setReverseScored(false);
+        dimensionDto.setOptions(options);
 
+        // 鍙戦€佽姹?
         mockMvc.perform(post("/api/admin/cycles/" + cycleId + "/dimensions")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -5028,8 +5048,7 @@ class CycleControllerIntegrationTest {
                 .andExpect(jsonPath("$", hasSize(1)))
                 .andExpect(jsonPath("$[0].prompt", is("浣犵殑浣滄伅涔犳儻鏄紵")));
 
-        // 4. Delete the cycle (should fail because status is not DRAFT)
-        // First, let's update status to OPEN
+        // 4. Update status to OPEN, then attempt to delete (should fail)
         MatchingCycleUpdateDto updateStatusDto = new MatchingCycleUpdateDto(null, null, null, "OPEN");
         mockMvc.perform(put("/api/admin/cycles/" + cycleId)
                         .header("Authorization", adminToken)
@@ -5037,7 +5056,6 @@ class CycleControllerIntegrationTest {
                         .content(objectMapper.writeValueAsString(updateStatusDto)))
                 .andExpect(status().isOk());
 
-        // Now, try to delete it
         mockMvc.perform(delete("/api/admin/cycles/" + cycleId).header("Authorization", adminToken))
                 .andExpect(status().isConflict());
 
@@ -5481,8 +5499,14 @@ public class FullLifecycleIntegrationTest {
                 new OptionCreateDto("鍋跺皵鐔 (12鐐?1鐐?", 3.0),
                 new OptionCreateDto("澶滅尗瀛?(1鐐瑰悗)", 5.0)
         );
-        SurveyDimensionCreateDto dimensionCreateDto = new SurveyDimensionCreateDto(
-                "rest_habit", "浣犵殑浣滄伅涔犳儻鏄紵", "SOFT_FACTOR", "SINGLE_CHOICE", 1.5, null, false, options);
+        SurveyDimensionCreateDto dimensionCreateDto = new SurveyDimensionCreateDto();
+        dimensionCreateDto.setDimensionKey("rest_habit");
+        dimensionCreateDto.setPrompt("浣犵殑浣滄伅涔犳儻鏄紵");
+        dimensionCreateDto.setDimensionType("SOFT_FACTOR");
+        dimensionCreateDto.setResponseType("SINGLE_CHOICE");
+        dimensionCreateDto.setWeight(1.5);
+        dimensionCreateDto.setReverseScored(false);
+        dimensionCreateDto.setOptions(options);
         MvcResult dimensionResult = mockMvc.perform(post("/api/admin/cycles/" + cycleId + "/dimensions")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -5664,8 +5688,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class) // 鍏抽敭锛氭寜椤哄簭鎵ц娴嬭瘯鏂规硶
 public class FullSystemFlowIntegrationTest {
 
+    @Container
     private static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-alpine");
-    // 2. 娣诲姞 static 鍒濆鍖栧潡鏉ユ墜鍔ㄥ惎鍔ㄥ鍣?
+
     static {
         postgres.start();
     }
@@ -5682,10 +5707,6 @@ public class FullSystemFlowIntegrationTest {
     @Autowired private BedRepository bedRepository;
     @Autowired private MatchingResultRepository resultRepository;
     @Autowired private UserResponseRepository responseRepository;
-    // Add other repositories as needed for new entities
-    // @Autowired private FeedbackRepository feedbackRepository;
-    // @Autowired private SwapRequestRepository swapRequestRepository;
-    // @Autowired private ArticleRepository articleRepository;
 
     // State passed between ordered tests
     private String adminToken;
@@ -5707,7 +5728,7 @@ public class FullSystemFlowIntegrationTest {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("spring.jpa.hibernate.ddl-auto", () -> "create"); // create-drop ensures clean state for each run
+        registry.add("spring.jpa.hibernate.ddl-auto", () -> "create");
     }
 
     @BeforeAll
@@ -5801,12 +5822,21 @@ public class FullSystemFlowIntegrationTest {
         assertNotNull(this.cycleId);
 
         // 2. Add a 'SOFT_FACTOR' dimension
+        // [鍏抽敭淇] 浣跨敤 setter 鏂规硶鏋勫缓 DTO
         List<OptionCreateDto> cleanlinessOptions = List.of(
                 new OptionCreateDto("姣忓ぉ鎵撴壂", 1.0),
                 new OptionCreateDto("姣忓懆鎵撴壂", 3.0),
                 new OptionCreateDto("鏈夌┖鍐嶆墦鎵?, 5.0)
         );
-        SurveyDimensionCreateDto cleanlinessDim = new SurveyDimensionCreateDto("cleanliness", "浣犲瀹胯垗鐨勬暣娲佸害瑕佹眰鏄紵", "SOFT_FACTOR", "SINGLE_CHOICE", 1.5, null, false, cleanlinessOptions);
+        SurveyDimensionCreateDto cleanlinessDim = new SurveyDimensionCreateDto();
+        cleanlinessDim.setDimensionKey("cleanliness");
+        cleanlinessDim.setPrompt("浣犲瀹胯垗鐨勬暣娲佸害瑕佹眰鏄紵");
+        cleanlinessDim.setDimensionType("SOFT_FACTOR");
+        cleanlinessDim.setResponseType("SINGLE_CHOICE");
+        cleanlinessDim.setWeight(1.5);
+        cleanlinessDim.setReverseScored(false);
+        cleanlinessDim.setOptions(cleanlinessOptions);
+
         MvcResult dim1Result = mockMvc.perform(post("/api/admin/cycles/" + this.cycleId + "/dimensions")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -5817,11 +5847,20 @@ public class FullSystemFlowIntegrationTest {
         assertNotNull(this.cleanlinessDimensionId);
 
         // 3. Add a 'HARD_FILTER' dimension
+        // [鍏抽敭淇] 浣跨敤 setter 鏂规硶鏋勫缓 DTO
         List<OptionCreateDto> atmosphereOptions = List.of(
                 new OptionCreateDto("甯屾湜瀹夐潤瀛︿範", 1.0),
                 new OptionCreateDto("甯屾湜鐑椆娲昏穬", 2.0)
         );
-        SurveyDimensionCreateDto atmosphereDim = new SurveyDimensionCreateDto("atmosphere", "浣犳湡鏈涚殑瀹胯垗姘涘洿鏄紵", "HARD_FILTER", "SINGLE_CHOICE", 1.0, null, false, atmosphereOptions);
+        SurveyDimensionCreateDto atmosphereDim = new SurveyDimensionCreateDto();
+        atmosphereDim.setDimensionKey("atmosphere");
+        atmosphereDim.setPrompt("浣犳湡鏈涚殑瀹胯垗姘涘洿鏄紵");
+        atmosphereDim.setDimensionType("HARD_FILTER");
+        atmosphereDim.setResponseType("SINGLE_CHOICE");
+        atmosphereDim.setWeight(1.0);
+        atmosphereDim.setReverseScored(false);
+        atmosphereDim.setOptions(atmosphereOptions);
+
         MvcResult dim2Result = mockMvc.perform(post("/api/admin/cycles/" + this.cycleId + "/dimensions")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -5884,18 +5923,13 @@ public class FullSystemFlowIntegrationTest {
                 .andExpect(status().isAccepted());
 
         // *** MOCKING THE ALGORITHM'S RESULT ***
-        // In a real test against a running system, we might need to wait.
-        // Here, we manually create the results in the DB to test the downstream APIs.
         UUID groupId = UUID.randomUUID();
         createMatchingResult(cycleId, studentUser.getId(), bed1Id, groupId);
         createMatchingResult(cycleId, roommateUser.getId(), bed2Id, groupId);
 
-        // 2. Admin verifies the results (assuming this endpoint is now implemented)
-        // This is a placeholder test for an API defined in the spec but not yet in the provided code.
-        // The test serves as a driver for implementing this feature.
+        // 2. Admin verifies the results
         mockMvc.perform(get("/api/admin/cycles/" + cycleId + "/validate-results")
                         .header("Authorization", adminToken))
-                // For now, we expect a 200 OK with a basic success message, as logic is placeholder.
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isValid", is(true)));
     }
@@ -5909,28 +5943,32 @@ public class FullSystemFlowIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.assignment.building", is("绱崋鍏瘬")))
                 .andExpect(jsonPath("$.assignment.room", is("401")))
-                .andExpect(jsonPath("$.assignment.bed", is(1))) // Bed number might vary, but for this mock, it's 1
+                .andExpect(jsonPath("$.assignment.bed", is(1)))
                 .andExpect(jsonPath("$.roommates", hasSize(1)))
                 .andExpect(jsonPath("$.roommates[0].name", is("鏉庡洓")));
 
-        // 2. Student 1 submits feedback (placeholder for a new feature)
-        // FeedbackCreate feedbackDto = new FeedbackCreate(false, 5, "鍒嗛厤缁撴灉寰堟弧鎰忥紝瀹ゅ弸鐪嬭捣鏉ヤ笉閿欙紒");
-        // mockMvc.perform(post("/api/student/feedback")
-        //                 .header("Authorization", studentToken)
-        //                 .contentType(MediaType.APPLICATION_JSON)
-        //                 .content(objectMapper.writeValueAsString(feedbackDto)))
-        //         .andExpect(status().isCreated());
+        // The following are placeholder tests for features not yet fully implemented.
+        // They are commented out but show the direction for future development.
+        /*
+        // 2. Student 1 submits feedback
+        FeedbackCreateDto feedbackDto = new FeedbackCreateDto(false, 5, "鍒嗛厤缁撴灉寰堟弧鎰忥紝瀹ゅ弸鐪嬭捣鏉ヤ笉閿欙紒");
+        mockMvc.perform(post("/api/student/feedback")
+                        .header("Authorization", studentToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(feedbackDto)))
+                .andExpect(status().isCreated());
 
-        // 3. Student 1 submits a swap request (placeholder for a new feature)
-        // SwapRequestCreate swapDto = new SwapRequestCreate("鎰熻绌鸿皟浣嶇疆涓嶅お濂斤紝鎯虫崲涓€涓簥浣嶃€?);
-        // MvcResult swapResult = mockMvc.perform(post("/api/student/swap-requests")
-        //                 .header("Authorization", studentToken)
-        //                 .contentType(MediaType.APPLICATION_JSON)
-        //                 .content(objectMapper.writeValueAsString(swapDto)))
-        //         .andExpect(status().isCreated())
-        //         .andReturn();
-        // this.swapRequestId = objectMapper.readValue(swapResult.getResponse().getContentAsString(), SwapRequest.class).getId();
-        // assertNotNull(this.swapRequestId);
+        // 3. Student 1 submits a swap request
+        SwapRequestCreateDto swapDto = new SwapRequestCreateDto("鎰熻绌鸿皟浣嶇疆涓嶅お濂斤紝鎯虫崲涓€涓簥浣嶃€?);
+        MvcResult swapResult = mockMvc.perform(post("/api/student/swap-requests")
+                        .header("Authorization", studentToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(swapDto)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        this.swapRequestId = objectMapper.readValue(swapResult.getResponse().getContentAsString(), SwapRequestDto.class).id();
+        assertNotNull(this.swapRequestId);
+        */
     }
 
     @Test
@@ -5938,23 +5976,24 @@ public class FullSystemFlowIntegrationTest {
     @DisplayName("姝ラ6 [ADM-06, ADM-07]: 绠＄悊鍛樺鐞嗙敵璇峰苟鍙戝竷鍐呭")
     void step6_AdminProcessesRequestsAndPublishesContent() throws Exception {
         // This whole step is a placeholder for new features defined in the spec.
-
+        /*
         // 1. Admin reviews and approves the swap request
-        // SwapRequestUpdate swapUpdateDto = new SwapRequestUpdate("APPROVED", "宸蹭笌鍚屽娌熼€氾紝鍚屾剰璋冩崲銆?);
-        // mockMvc.perform(put("/api/admin/swap-requests/" + this.swapRequestId + "/process")
-        //                 .header("Authorization", adminToken)
-        //                 .contentType(MediaType.APPLICATION_JSON)
-        //                 .content(objectMapper.writeValueAsString(swapUpdateDto)))
-        //         .andExpect(status().isOk())
-        //         .andExpect(jsonPath("$.status", is("APPROVED")));
+        SwapRequestUpdateDto swapUpdateDto = new SwapRequestUpdateDto("APPROVED", "宸蹭笌鍚屽娌熼€氾紝鍚屾剰璋冩崲銆?);
+        mockMvc.perform(put("/api/admin/swap-requests/" + this.swapRequestId + "/process")
+                        .header("Authorization", adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(swapUpdateDto)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("APPROVED")));
 
         // 2. Admin publishes a new article
-        // ArticleCreate articleDto = new ArticleCreate("瀹胯垗鏂囧寲寤鸿灏忚创澹?, "...", "瀹胯垗鏂囧寲");
-        // mockMvc.perform(post("/api/admin/articles")
-        //                 .header("Authorization", adminToken)
-        //                 .contentType(MediaType.APPLICATION_JSON)
-        //                 .content(objectMapper.writeValueAsString(articleDto)))
-        //         .andExpect(status().isCreated());
+        ArticleCreateDto articleDto = new ArticleCreateDto("瀹胯垗鏂囧寲寤鸿灏忚创澹?, "...", "瀹胯垗鏂囧寲");
+        mockMvc.perform(post("/api/admin/articles")
+                        .header("Authorization", adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(articleDto)))
+                .andExpect(status().isCreated());
+        */
     }
 
     @Test
@@ -5962,17 +6001,18 @@ public class FullSystemFlowIntegrationTest {
     @DisplayName("姝ラ7 [STU-05]: 瀛︾敓鏌ョ湅鏀寔鍐呭鍜岄€氱煡")
     void step7_StudentViewsContentAndNotifications() throws Exception {
         // This whole step is a placeholder for new features defined in the spec.
-
+        /*
         // 1. Student checks for new articles
-        // mockMvc.perform(get("/api/student/articles?category=瀹胯垗鏂囧寲").header("Authorization", studentToken))
-        //         .andExpect(status().isOk())
-        //         .andExpect(jsonPath("$", hasSize(1)))
-        //         .andExpect(jsonPath("$[0].title", is("瀹胯垗鏂囧寲寤鸿灏忚创澹?)));
+        mockMvc.perform(get("/api/student/articles?category=瀹胯垗鏂囧寲").header("Authorization", studentToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].title", is("瀹胯垗鏂囧寲寤鸿灏忚创澹?)));
 
         // 2. Student checks for notifications (e.g., about the approved swap request)
-        // mockMvc.perform(get("/api/student/notifications").header("Authorization", studentToken))
-        //         .andExpect(status().isOk())
-        //         .andExpect(jsonPath("$[0].message", containsString("鎮ㄧ殑璋冨鐢宠宸茶鎵瑰噯")));
+        mockMvc.perform(get("/api/student/notifications").header("Authorization", studentToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].message", containsString("鎮ㄧ殑璋冨鐢宠宸茶鎵瑰噯")));
+        */
     }
 
 
@@ -6034,11 +6074,10 @@ public class FullSystemFlowIntegrationTest {
 }
 ----------
 .\src\test\java\com\smartdorm\backend\controller\SecondFullSystemFlowIntegrationTest.java:
-// src/test/java/com/smartdorm/backend/controller/FullSystemFlowIntegrationTest.java
+// src/test/java/com/smartdorm/backend/controller/SecondFullSystemFlowIntegrationTest.java
 package com.smartdorm.backend.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.smartdorm.backend.dto.AdminDtos;
 import com.smartdorm.backend.dto.CycleDtos.*;
 import com.smartdorm.backend.dto.DormDtos.*;
 import com.smartdorm.backend.dto.LoginRequest;
@@ -6048,7 +6087,6 @@ import com.smartdorm.backend.dto.SupportDtos;
 import com.smartdorm.backend.entity.*;
 import com.smartdorm.backend.repository.*;
 import jakarta.transaction.Transactional;
-import org.antlr.v4.runtime.misc.LogManager;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -6201,6 +6239,7 @@ public class SecondFullSystemFlowIntegrationTest {
     @Order(2)
     @DisplayName("姝ラ2 [ADM-01, ADM-02]: 绠＄悊鍛樺垱寤哄垎閰嶅懆鏈熷苟璁捐闂嵎")
     void step2_AdminCreatesCycleAndDesignsSurvey() throws Exception {
+        // 鍒涘缓鍒嗛厤鍛ㄦ湡
         MatchingCycleCreateDto createCycleDto = new MatchingCycleCreateDto("2024绾ц绠楁満瀛﹂櫌鏂扮敓鍒嗛厤", Instant.now(), Instant.now().plusSeconds(86400 * 7));
         MvcResult cycleResult = mockMvc.perform(post("/api/admin/cycles")
                         .header("Authorization", adminToken)
@@ -6211,15 +6250,54 @@ public class SecondFullSystemFlowIntegrationTest {
         this.cycleId = objectMapper.readValue(cycleResult.getResponse().getContentAsString(), MatchingCycleDto.class).id();
         assertNotNull(this.cycleId);
 
-        List<OptionCreateDto> cleanlinessOptions = List.of(new OptionCreateDto("姣忔棩鎵撴壂", 1.0), new OptionCreateDto("姣忓懆鎵撴壂", 3.0), new OptionCreateDto("鏈夌┖鍐嶆墦鎵?, 5.0));
-        SurveyDimensionCreateDto cleanlinessDim = new SurveyDimensionCreateDto("cleanliness", "浣犲瀹胯垗鐨勬暣娲佸害瑕佹眰鏄紵", "SOFT_FACTOR", "SINGLE_CHOICE", 1.5, null, false, cleanlinessOptions);
-        MvcResult dim1Result = mockMvc.perform(post("/api/admin/cycles/" + this.cycleId + "/dimensions").header("Authorization", adminToken).contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(cleanlinessDim))).andExpect(status().isCreated()).andReturn();
+        // --- [鍏抽敭淇] 鍒涘缓绗竴涓淮搴?---
+        // 1. 鍒涘缓閫夐」鍒楄〃
+        List<OptionCreateDto> cleanlinessOptions = List.of(
+                new OptionCreateDto("姣忔棩鎵撴壂", 1.0),
+                new OptionCreateDto("姣忓懆鎵撴壂", 3.0),
+                new OptionCreateDto("鏈夌┖鍐嶆墦鎵?, 5.0)
+        );
+        // 2. 浣跨敤榛樿鏋勯€犲嚱鏁板垱寤?DTO
+        SurveyDimensionCreateDto cleanlinessDim = new SurveyDimensionCreateDto();
+        // 3. 浣跨敤 setter 鏂规硶濉厖鏁版嵁
+        cleanlinessDim.setDimensionKey("cleanliness");
+        cleanlinessDim.setPrompt("浣犲瀹胯垗鐨勬暣娲佸害瑕佹眰鏄紵");
+        cleanlinessDim.setDimensionType("SOFT_FACTOR");
+        cleanlinessDim.setResponseType("SINGLE_CHOICE");
+        cleanlinessDim.setWeight(1.5);
+        cleanlinessDim.setReverseScored(false);
+        cleanlinessDim.setOptions(cleanlinessOptions);
+
+        // 4. 鍙戦€佽姹?
+        MvcResult dim1Result = mockMvc.perform(post("/api/admin/cycles/" + this.cycleId + "/dimensions")
+                        .header("Authorization", adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(cleanlinessDim)))
+                .andExpect(status().isCreated())
+                .andReturn();
         this.cleanlinessDimensionId = objectMapper.readValue(dim1Result.getResponse().getContentAsString(), SurveyDimensionDto.class).id();
         assertNotNull(this.cleanlinessDimensionId);
 
-        List<OptionCreateDto> atmosphereOptions = List.of(new OptionCreateDto("甯屾湜瀹夐潤瀛︿範", 1.0), new OptionCreateDto("甯屾湜鐑椆娲昏穬", 2.0));
-        SurveyDimensionCreateDto atmosphereDim = new SurveyDimensionCreateDto("atmosphere", "浣犳湡鏈涚殑瀹胯垗姘涘洿鏄紵", "HARD_FILTER", "SINGLE_CHOICE", 1.0, null, false, atmosphereOptions);
-        MvcResult dim2Result = mockMvc.perform(post("/api/admin/cycles/" + this.cycleId + "/dimensions").header("Authorization", adminToken).contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(atmosphereDim))).andExpect(status().isCreated()).andReturn();
+        // --- [鍏抽敭淇] 鍒涘缓绗簩涓淮搴?---
+        List<OptionCreateDto> atmosphereOptions = List.of(
+                new OptionCreateDto("甯屾湜瀹夐潤瀛︿範", 1.0),
+                new OptionCreateDto("甯屾湜鐑椆娲昏穬", 2.0)
+        );
+        SurveyDimensionCreateDto atmosphereDim = new SurveyDimensionCreateDto();
+        atmosphereDim.setDimensionKey("atmosphere");
+        atmosphereDim.setPrompt("浣犳湡鏈涚殑瀹胯垗姘涘洿鏄紵");
+        atmosphereDim.setDimensionType("HARD_FILTER");
+        atmosphereDim.setResponseType("SINGLE_CHOICE");
+        atmosphereDim.setWeight(1.0);
+        atmosphereDim.setReverseScored(false);
+        atmosphereDim.setOptions(atmosphereOptions);
+
+        MvcResult dim2Result = mockMvc.perform(post("/api/admin/cycles/" + this.cycleId + "/dimensions")
+                        .header("Authorization", adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(atmosphereDim)))
+                .andExpect(status().isCreated())
+                .andReturn();
         this.atmosphereDimensionId = objectMapper.readValue(dim2Result.getResponse().getContentAsString(), SurveyDimensionDto.class).id();
         assertNotNull(this.atmosphereDimensionId);
     }

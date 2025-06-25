@@ -2,54 +2,75 @@
 <!DOCTYPE html>
 <html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
 <head>
-    <title>问卷管理 - [[${cycle.name()}]]</title>
+    <!-- [UPDATED] Title is more descriptive now -->
+    <title>问卷与分配 - [[${cycle.name()}]]</title>
 </head>
 <body>
 <section layout:fragment="content">
+    <!-- [UPDATED] Active tab is now dimensions -->
     <div th:replace="~{admin/cycle/_cycle-nav :: subnav(cycleId=${cycle.id()}, activeTab='dimensions')}"></div>
-    <div style="display: flex; justify-content: space-between; align-items: center;">
+
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
         <hgroup style="margin-bottom: 0;">
-            <h2>问卷维度管理: [[${cycle.name()}]]</h2>
-            <h3>在此为周期设计问卷问题（维度）。</h3>
+            <!-- [UPDATED] Heading is more descriptive now -->
+            <h2>问卷与分配: [[${cycle.name()}]]</h2>
+            <h3>在此设计问卷并触发最终分配。</h3>
         </hgroup>
-        <a th:href="@{/view/admin/cycles/{id}/dimensions/new(id=${cycle.id()})}" role="button" style="margin-bottom: 1rem;">新增维度</a>
+
+        <!-- [NEW] Trigger Assignment Button, conditionally shown -->
+        <form th:if="${cycle.status() == 'OPEN'}"
+              th:action="@{/view/admin/cycles/{id}/trigger-assignment(id=${cycle.id()})}"
+              method="post" onsubmit="return confirm('确定要立即执行分配吗？此操作将关闭问卷通道并生成最终结果。');"
+              style="margin-bottom: 1rem;">
+            <button type="submit" class="contrast">🚀 一键分配</button>
+        </form>
+        <div th:if="${cycle.status() != 'OPEN'}" style="margin-bottom: 1rem;">
+            <a role="button" class="secondary" disabled>分配 (仅在'OPEN'状态可用)</a>
+        </div>
     </div>
 
     <div th:if="${successMessage}" class="success" th:text="${successMessage}" style="margin-bottom: 1rem;"></div>
     <div th:if="${errorMessage}" class="error" th:text="${errorMessage}" style="margin-bottom: 1rem;"></div>
 
-    <figure>
-        <table role="grid">
-            <thead>
-            <tr>
-                <th scope="col">问题/提示</th>
-                <th scope="col">Key</th>
-                <th scope="col">类型</th>
-                <th scope="col">权重</th>
-                <th scope="col" style="text-align: right;">操作</th>
-            </tr>
-            </thead>
-            <tbody>
-            <tr th:if="${#lists.isEmpty(dimensions)}">
-                <td colspan="5">该周期暂无问卷维度，请先新增。</td>
-            </tr>
-            <tr th:each="dim : ${dimensions}">
-                <td th:text="${dim.prompt()}"></td>
-                <td><code th:text="${dim.dimensionKey()}"></code></td>
-                <td th:text="${dim.dimensionType()}"></td>
-                <td th:text="${dim.weight()}"></td>
-                <td style="text-align: right;">
-                    <div role="group">
-                        <a href="#" role="button" class="secondary outline">编辑</a>
-                        <form action="#" method="post" style="display: inline;" onsubmit="return confirm('确定要删除此维度吗？');">
-                            <button type="submit" class="contrast outline">删除</button>
-                        </form>
-                    </div>
-                </td>
-            </tr>
-            </tbody>
-        </table>
-    </figure>
+    <!-- Existing dimension list table -->
+    <article>
+        <header style="display: flex; justify-content: space-between; align-items: center;">
+            <h5 style="margin: 0;">问卷维度列表</h5>
+            <a th:href="@{/view/admin/cycles/{id}/dimensions/new(id=${cycle.id()})}" role="button" class="outline secondary" style="margin-bottom: 0; padding: 0.5rem 1rem;">新增维度</a>
+        </header>
+        <figure style="margin:0;">
+            <table role="grid">
+                <thead>
+                <tr>
+                    <th scope="col">问题/提示</th>
+                    <th scope="col">Key</th>
+                    <th scope="col">类型</th>
+                    <th scope="col">权重</th>
+                    <th scope="col" style="text-align: right;">操作</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr th:if="${#lists.isEmpty(dimensions)}">
+                    <td colspan="5">该周期暂无问卷维度，请先新增。</td>
+                </tr>
+                <tr th:each="dim : ${dimensions}">
+                    <td th:text="${dim.prompt()}"></td>
+                    <td><code th:text="${dim.dimensionKey()}"></code></td>
+                    <td th:text="${dim.dimensionType()}"></td>
+                    <td th:text="${dim.weight()}"></td>
+                    <td style="text-align: right;">
+                        <div role="group">
+                            <a href="#" role="button" class="secondary outline">编辑</a>
+                            <form action="#" method="post" style="display: inline;" onsubmit="return confirm('确定要删除此维度吗？');">
+                                <button type="submit" class="contrast outline">删除</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+        </figure>
+    </article>
     <a th:href="@{/view/admin/cycles}">← 返回周期列表</a>
 </section>
 </body>

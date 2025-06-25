@@ -1,0 +1,36 @@
+<!-- src/main/resources/templates/admin/cycle/quality-report.html -->
+<!DOCTYPE html>
+<html lang="zh-CN" layout:decorate="~{layout}" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <title>质量报告 - [[${cycle.name()}]]</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <div th:replace="~{admin/cycle/_cycle-nav :: subnav(cycleId=${cycle.id()}, activeTab='report')}"></div>
+
+    <hgroup>
+        <h2>分配质量报告: [[${cycle.name()}]]</h2>
+        <h3 th:text="${report.message()}">Results meet all validation criteria.</h3>
+    </hgroup>
+
+    <div th:if="${#lists.isEmpty(report.details())}">
+        <p>没有可用的质量报告详情。</p>
+    </div>
+
+    <div class="grid" th:unless="${#lists.isEmpty(report.details())}">
+        <article th:each="detail : ${report.details()}">
+            <header th:text="${detail.dorm()}">紫荆公寓-301</header>
+            <p>
+                <strong th:text="${detail.metric()}">神经质均值</strong>:
+                <span th:text="${#numbers.formatDecimal(detail.value(), 1, 2)}">0.55</span>
+            </p>
+            <progress th:value="${detail.isCompliant() ? 100 : 25}" max="100"></progress>
+            <footer>
+                <span th:text="${detail.isCompliant() ? '达标' : '待观察'}"
+                      th:class="${detail.isCompliant() ? 'success' : 'error'}">达标</span>
+            </footer>
+        </article>
+    </div>
+</section>
+</body>
+</html>

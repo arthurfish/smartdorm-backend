@@ -1,0 +1,48 @@
+<!-- src/main/resources/templates/student/result-view.html -->
+<!DOCTYPE html>
+<html lang="zh-CN"
+      layout:decorate="~{layout}"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+    <title>我的宿舍分配结果</title>
+</head>
+<body>
+<section layout:fragment="content">
+    <hgroup>
+        <h2>宿舍分配结果</h2>
+        <h3 th:text="|你好，${#authentication.name}同学！这是你的最终分配结果。|"></h3>
+    </hgroup>
+
+    <div class="grid">
+        <!-- Your Assignment -->
+        <article>
+            <header>
+                <strong>你的宿舍信息</strong>
+            </header>
+            <h2 style="font-size: 2.5rem; margin-bottom: 0.5rem;" th:text="${resultDto.assignment.building} + ' - ' + ${resultDto.assignment.room}">
+                紫荆公寓 - 101
+            </h2>
+            <p>你的床位是: <strong th:text="${resultDto.assignment.bed} + '号床'">1号床</strong></p>
+        </article>
+
+        <!-- Your Roommates -->
+        <article>
+            <header>
+                <strong>你的室友们</strong>
+            </header>
+            <div th:if="${#lists.isEmpty(resultDto.roommates)}">
+                <p>你暂时还没有室友。</p>
+            </div>
+            <ul th:unless="${#lists.isEmpty(resultDto.roommates)}" style="list-style-type: none; padding: 0;">
+                <li th:each="roommate : ${resultDto.roommates}" style="margin-bottom: 0.75rem;">
+                    <strong th:text="${roommate.name}">李四</strong> (<span th:text="'学号: ' + ${roommate.studentId}">学号: 20240002</span>)
+                </li>
+            </ul>
+        </article>
+    </div>
+
+    <a th:href="@{/view/student/dashboard}" role="button" class="secondary outline" style="margin-top: 1rem;">返回学生主面板</a>
+</section>
+</body>
+</html>

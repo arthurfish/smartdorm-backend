@@ -2,21 +2,25 @@
 <!DOCTYPE html>
 <html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
 <body>
-<nav th:fragment="subnav(cycleId, activeTab)" aria-label="breadcrumb">
+<nav th:fragment="subnav(cycleId, activeTab)" aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
     <ul>
         <li>
             <a th:href="@{/view/admin/cycles/{id}/dimensions(id=${cycleId})}"
                th:aria-current="${activeTab == 'dimensions' ? 'page' : null}">
-                问卷维度管理
+                问卷与分配
             </a>
         </li>
         <li>
-            <a href="#" th:aria-current="${activeTab == 'results' ? 'page' : null}">
+            <!-- [UPDATED] Link to results page -->
+            <a th:href="@{/view/admin/cycles/{id}/results(id=${cycleId})}"
+               th:aria-current="${activeTab == 'results' ? 'page' : null}">
                 分配结果
             </a>
         </li>
         <li>
-            <a href="#" th:aria-current="${activeTab == 'report' ? 'page' : null}">
+            <!-- [UPDATED] Link to report page -->
+            <a th:href="@{/view/admin/cycles/{id}/quality-report(id=${cycleId})}"
+               th:aria-current="${activeTab == 'report' ? 'page' : null}">
                 质量报告
             </a>
         </li>
